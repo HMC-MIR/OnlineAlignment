@@ -20,7 +20,7 @@ def cosine_dist_vec2vec(fv_1: np.ndarray, fv_2: np.ndarray, normalized: bool = N
         normalized (bool): boolean indicating if fv_1 and fv_2 are __both__ L2 normalized
 
     Returns:
-        cosine distance between normalized fv_1 and normalized fv_2
+        Cosine distance (scalar) between normalized fv_1 and normalized fv_2
     """
 
     # check if normalized
@@ -32,11 +32,11 @@ def cosine_dist_vec2vec(fv_1: np.ndarray, fv_2: np.ndarray, normalized: bool = N
 
     # normalize feature vectors if needed
     if not normalized_fv_1:
-        fv_1 = fv_1 / np.linalg.norm(
-            fv_1, ord=2
+        fv_1 = fv_1 / (
+            np.linalg.norm(fv_1, ord=2) + 1e-10
         )  # l2 normalization, let numpy handle div by 0 errors
     if not normalized_fv_2:
-        fv_2 = fv_2 / np.linalg.norm(fv_2, ord=2)
+        fv_2 = fv_2 / (np.linalg.norm(fv_2, ord=2) + 1e-10)
 
     # now we are guaranteed normalization
     return _cosine_dist_vec2vec_normalized(fv_1, fv_2)
@@ -51,7 +51,7 @@ def _cosine_dist_vec2vec_normalized(fv_1: np.ndarray, fv_2: np.ndarray):
         fv_1 (np.ndarray): reference feature frame, shape (n_features, 1)
         fv_2 (np.ndarray): query feature frame, shape (n_features, 1)
     """
-    return 1 - fv_1.T @ fv_2  # optimize
+    return 1 - np.dot(fv_1.T, fv_2)  # optimize
 
 
 ### Helper Functions
@@ -79,33 +79,69 @@ class CosineDistance(CostMetric):
     def mat2mat(self, fm_1: np.ndarray, fm_2: np.ndarray, normalized: bool = None):
         """
         Calculates cosine distance between two feature matrices fm_1 and fm_2.
-            Assumes fm_1 and fm_2 are unnormalized.
+
+        Optimized implementation using matrix operations. Assumes fm_1 and fm_2 are unnormalized
+        unless normalized=True is specified.
 
         Args:
-            fm_1 (np.ndarray): reference feature matrix, shape (n_features, n_frames)
-            fm_2 (np.ndarray): query feature matrix, shape (n_features, n_frames)
-            normalized (bool): boolean indicating if fm_1 and fm_2 are __both__ L2 normalized
+            fm_1: Reference feature matrix, shape (n_features, n_frames_1)
+            fm_2: Query feature matrix, shape (n_features, n_frames_2)
+            normalized: If True, assumes both matrices are L2 normalized column-wise.
+                If None, checks normalization automatically.
 
         Returns:
-            cosine distance matrix between normalized fm_1 and normalized fm_2
+            Cosine distance matrix, shape (n_frames_1, n_frames_2).
+            Element (i, j) is the cosine distance between fm_1[:, i] and fm_2[:, j].
         """
-        raise NotImplementedError  # TODO: implement
+        # Normalize matrices if needed
+        if normalized is None:
+            # Check if columns are normalized
+            norms_1 = np.linalg.norm(fm_1, ord=2, axis=0, keepdims=True)
+            norms_2 = np.linalg.norm(fm_2, ord=2, axis=0, keepdims=True)
+            normalized = np.allclose(norms_1, 1.0, atol=1e-6) and np.allclose(
+                norms_2, 1.0, atol=1e-6
+            )
+
+        if not normalized:
+            # Normalize columns
+            fm_1 = fm_1 / (np.linalg.norm(fm_1, ord=2, axis=0, keepdims=True) + 1e-10)
+            fm_2 = fm_2 / (np.linalg.norm(fm_2, ord=2, axis=0, keepdims=True) + 1e-10)
+
+        # Compute cosine distance
+        return 1 - fm_1.T @ fm_2
 
     ### Vector-Matrix Cosine Distance
     def mat2vec(self, fm_1: np.ndarray, fv_2: np.ndarray, normalized: bool = None):
         """
         Calculates cosine distance between a feature matrix fm_1 and a feature frame vector fv_2.
-            Assumes fm_1 and fv_2 are unnormalized.
+
+        Optimized implementation using matrix operations. Assumes fm_1 and fv_2 are unnormalized
+        unless normalized=True is specified.
 
         Args:
-            fm_1 (np.ndarray): reference feature matrix, shape (n_features, n_frames)
-            fv_2 (np.ndarray): query feature frame, shape (n_features, 1)
-            normalized (bool): boolean indicating if fm_1 and fv_2 are __both__ L2 normalized
+            fm_1: Reference feature matrix, shape (n_features, n_frames)
+            fv_2: Query feature frame, shape (n_features, 1)
+            normalized: If True, assumes fm_1 columns and fv_2 are L2 normalized.
+                If None, checks normalization automatically.
 
         Returns:
-            cosine distance vector between normalized fm_1 and normalized fv_2
+            Cosine distance vector, shape (n_frames,).
+            Element i is the cosine distance between fm_1[:, i] and fv_2.
         """
-        raise NotImplementedError  # TODO: implement
+        # Normalize if needed
+        if normalized is None:
+            norms_1 = np.linalg.norm(fm_1, ord=2, axis=0, keepdims=True)
+            norm_2 = np.linalg.norm(fv_2, ord=2)
+            normalized = np.allclose(norms_1, 1.0, atol=1e-6) and np.isclose(
+                norm_2, 1.0, atol=1e-6
+            )
+
+        if not normalized:
+            fm_1 = fm_1 / (np.linalg.norm(fm_1, ord=2, axis=0, keepdims=True) + 1e-10)
+            fv_2 = fv_2 / (np.linalg.norm(fv_2, ord=2) + 1e-10)
+
+        # Convert to cosine distance
+        return 1 - (fm_1.T @ fv_2).flatten()
 
     ### Vector-Vector Cosine Distance
     def vec2vec(self, fv_1: np.ndarray, fv_2: np.ndarray, normalized: bool = None):
@@ -119,6 +155,6 @@ class CosineDistance(CostMetric):
             normalized (bool): boolean indicating if fv_1 and fv_2 are __both__ L2 normalized
 
         Returns:
-            cosine distance vector between normalized fv_1 and normalized fv_2
+            Cosine distance (scalar) between normalized fv_1 and normalized fv_2
         """
         return self.v2v_cost(fv_1, fv_2, normalized)

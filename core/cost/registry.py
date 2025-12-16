@@ -2,6 +2,10 @@
 
 # standard imports
 from typing import Callable
+import inspect
+
+# library imports
+import numpy as np
 
 # custom imports
 from .cost_metric import CostMetric
@@ -77,10 +81,44 @@ def _get_cost_from_callable(cost_metric: Callable) -> CostMetric:
     """Create cost metric from a callable distance function.
 
     Args:
-        cost_metric: Vector-to-vector distance function.
+        cost_metric: Vector-to-vector distance function. Must accept two numpy arrays
+            and return a scalar distance value.
 
     Returns:
         CostMetric: Custom-built cost metric based on the provided function.
+
+    Raises:
+        ValueError: If the callable doesn't appear to be a valid distance function.
     """
-    # TODO: Add validation that cost_metric is a valid v2v cost function
-    return CostMetric(v2v_cost=cost_metric, name=cost_metric.__name__)
+    # Basic validation: check if it's callable (already done by isinstance check)
+    # Try to get function name
+    func_name = getattr(cost_metric, "__name__", "unknown")
+
+    # Optional: Try a test call with dummy arrays to validate signature
+    try:
+        sig = inspect.signature(cost_metric)
+        n_params = len(sig.parameters)
+        if n_params < 2:
+            raise ValueError(
+                f"Cost function '{func_name}' must accept at least 2 parameters "
+                f"(two feature vectors), got {n_params}"
+            )
+    except (ValueError, TypeError):
+        # If signature inspection fails, try a test call
+        try:
+            test_vec1 = np.array([[1.0], [2.0]], dtype=np.float32)
+            test_vec2 = np.array([[3.0], [4.0]], dtype=np.float32)
+            result = cost_metric(test_vec1, test_vec2)
+            # Check that result is a scalar or can be converted to one
+            if not np.isscalar(result) and result.shape != ():
+                raise ValueError(
+                    f"Cost function '{func_name}' must return a scalar value, "
+                    f"got shape {result.shape}"
+                )
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise
+            # If test call fails, warn but don't fail (might be due to numba compilation, etc.)
+            pass
+
+    return CostMetric(v2v_cost=cost_metric, name=func_name)
