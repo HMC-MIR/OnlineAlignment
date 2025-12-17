@@ -20,9 +20,11 @@ def _validate_dtw_steps_weights(steps: np.ndarray, weights: np.ndarray) -> None:
         raise ValueError("DTW steps and weights must have the same number of rows")
 
     if steps.shape[1] != 2:
-        raise ValueError("DTW steps must have 2 columns for row and column steps")
-    if weights.shape[1] != 1:
-        raise ValueError("DTW weights must have 1 column for weight values")
+        raise ValueError(
+            f"DTW steps must have 2 columns for row and column steps. Got shape {steps.shape}"
+        )
+    if weights.ndim != 1:
+        raise ValueError(f"DTW weights must be 1D array, got {weights.ndim}D array")
 
 
 def _validate_prev_alignment_path(prev_alignment_path: np.ndarray, ref_length: int) -> None:
@@ -46,12 +48,13 @@ def _validate_prev_alignment_path(prev_alignment_path: np.ndarray, ref_length: i
             f"Previous alignment path must be no longer than the reference features. "
             f"Got {len(prev_alignment_path)} > {ref_length}"
         )
-        
+
+
 def _validate_query_features_shape(query_features: np.ndarray):
     """Validate query features have the correct shape.
 
     Args:
         query_features (np.ndarray): complete query features input to an alignment algorithm
     """
-    
+
     # check that query features have the right shape

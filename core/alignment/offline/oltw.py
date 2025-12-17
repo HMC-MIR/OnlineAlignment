@@ -46,7 +46,7 @@ class OfflineOLTW(OfflineAlignment):
         super().__init__(reference_features, cost_metric)
 
         # initialize query and reference locations
-        self.t, self.j = 1  # t is query, j is reference
+        self.t, self.j = 0, 0  # t is query (row), j is reference (column)
 
         # steps and weights
         _validate_dtw_steps_weights(steps, weights)
@@ -58,16 +58,11 @@ class OfflineOLTW(OfflineAlignment):
         self.cur_run_count = 0
         self.prev = None  # previous step taken
 
-        # initialize path
+        # initialize path (0-indexed)
         self.path = [[0], [0]]  # TODO: provide optimizations
 
     def get_inc(self, D_normalized: np.ndarray):
-        """Check which direction to increment.
-
-        Args:
-            t (int): query position
-            j (int): reference position
-        """
+        """Check which direction to increment based on normalized costs."""
         # handle maximum run count
         if self.cur_run_count > self.max_run_count:
             if self.prev == ROW:
@@ -85,16 +80,16 @@ class OfflineOLTW(OfflineAlignment):
         else:
             return BOTH
 
-    def _get_min_cost_indices(self, D_noramlized: np.ndarray):
+    def _get_min_cost_indices(self, D_normalized: np.ndarray):
         """Calculate the min cost index in current row and column.
 
         Args:
-            D_noramlized (np.ndarray): Normalized accumulated cost matrix.
+            D_normalized (np.ndarray): Normalized accumulated cost matrix.
         """
 
         # access current row and columns
-        cur_col = D_noramlized[self.t, :]
-        cur_row = D_noramlized[:, self.j]
+        cur_col = D_normalized[self.t, :]
+        cur_row = D_normalized[:, self.j]
 
         # initialize min
         min_cost = np.inf
@@ -111,7 +106,7 @@ class OfflineOLTW(OfflineAlignment):
             if cost < min_cost:
                 min_cost = cost
                 min_cost_idx = idx
-                min_cost_location = ROW
+                min_cost_location = COLUMN
 
         if min_cost_location == ROW:
             return min_cost_idx, self.j
@@ -130,10 +125,16 @@ class OfflineOLTW(OfflineAlignment):
         # validate input query features
         _validate_query_features_shape(query_features)
 
+        # reset state for this alignment run
+        self.t, self.j = 0, 0
+        self.cur_run_count = 0
+        self.prev = None
+        self.path = [[0], [0]]
+
         # compute full cost matrix
         C = self.cost_metric.mat2mat(self.reference_features, query_features)
 
-        # compute accumulated cost matrix
+        # compute accumulated cost matrix up front
         D = dtw(
             backtrack=False,  # no backtrack since we only care about the accumulated cost matrix
             C=C,
@@ -141,16 +142,22 @@ class OfflineOLTW(OfflineAlignment):
             weights_mul=self.weights,
         )
 
-        # normalize by path length
+        # normalize by path length (manhattan distance)
         D_normalized = normalize_by_path_length(D)
 
+        # dimensions for bounds checking (0-indexed)
+        query_length = query_features.shape[1]
+        ref_length = self.reference_length
+
         # main recursion loop
-        while self.t < query_features.shape[1]:
+        # stop when we have reached the end of either query or reference
+        while self.t < query_length - 1 or self.j < ref_length - 1:
             inc = self.get_inc(D_normalized)  # get increment direction
 
-            if inc != COLUMN:
+            # increment indices while staying within bounds
+            if inc != COLUMN and self.t < query_length - 1:
                 self.t += 1
-            if inc != ROW:
+            if inc != ROW and self.j < ref_length - 1:
                 self.j += 1
             if inc == self.prev:
                 self.cur_run_count += 1
@@ -159,7 +166,7 @@ class OfflineOLTW(OfflineAlignment):
             if inc != BOTH:
                 self.prev = inc
 
-            self.path[0].append(self.t)
-            self.path[1].append(self.j)
+            self.path[0].append(self.j)
+            self.path[1].append(self.t)
 
         return self.path
