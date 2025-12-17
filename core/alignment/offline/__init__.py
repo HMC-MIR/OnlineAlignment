@@ -1,3 +1,5 @@
-"""Offline alignment algorithms."""
+"""Base class for offline alignment algorithms."""
 
-__all__ = []
+from .base import OfflineAlignment
+
+__all__ = ["OfflineAlignment"]
