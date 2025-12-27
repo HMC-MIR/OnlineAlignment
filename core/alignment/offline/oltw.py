@@ -31,6 +31,7 @@ class OfflineOLTW(OfflineAlignment):
         weights: np.ndarray = OLTW_WEIGHTS,
         cost_metric: str | Callable | CostMetric = "cosine",
         max_run_count: int = 3,
+        c: int = None,
     ):
         """Initialize OfflineOLTW algorithm.
 
@@ -42,11 +43,13 @@ class OfflineOLTW(OfflineAlignment):
             cost_metric: Cost metric to use for computing distances.
                 Can be a string name, callable function, or CostMetric instance.
             max_run_count: Maximum run count. Defaults to 3.
+            c: band size for comparing costs. #TODO: optimize based on banding
         """
         super().__init__(reference_features, cost_metric)
 
         # initialize query and reference locations
         self.t, self.j = 0, 0  # t is reference (row), j is query (column)
+        self.c = c
 
         # steps and weights
         _validate_dtw_steps_weights(steps, weights)
@@ -63,6 +66,10 @@ class OfflineOLTW(OfflineAlignment):
 
     def get_inc(self, D_normalized: np.ndarray):
         """Check which direction to increment based on normalized costs."""
+        # handle initial period
+        if self.c is not None and self.t < self.c:
+            return BOTH
+
         # handle maximum run count
         if self.cur_run_count >= self.max_run_count:
             if self.prev == ROW:
@@ -87,9 +94,17 @@ class OfflineOLTW(OfflineAlignment):
             D_normalized (np.ndarray): Normalized accumulated cost matrix.
         """
 
-        # access current row and columns
-        cur_row = D_normalized[self.t, :]  # row t = reference frame t
-        cur_col = D_normalized[:, self.j]  # column j = query frame j
+        # Access the last c elements of the current row and column, or all history if c is None
+        if self.c is not None:
+            cur_row = D_normalized[
+                self.t, max(0, self.j - self.c + 1) : self.j + 1
+            ]  # last c columns in row t
+            cur_col = D_normalized[
+                max(0, self.t - self.c + 1) : self.t + 1, self.j
+            ]  # last c rows in column j
+        else:
+            cur_row = D_normalized[self.t, : self.j + 1]  # all previous columns in row t
+            cur_col = D_normalized[: self.t + 1, self.j]  # all previous rows in column j
 
         # initialize min
         min_cost = np.inf
