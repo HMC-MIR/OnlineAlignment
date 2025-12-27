@@ -23,6 +23,7 @@ class AlignmentBase(ABC):
         self,
         reference_features: np.ndarray,
         cost_metric: str | Callable | CostMetric,
+        **kwargs,
     ):
         """Initialize the alignment algorithm.
 
@@ -31,6 +32,8 @@ class AlignmentBase(ABC):
                 Shape (n_features, n_frames)
             cost_metric: Cost metric to use for computing distances.
                 Can be a string name, callable function, or CostMetric instance.
+            **kwargs: Additional keyword arguments to pass to the cost metric constructor.
+                For "lpnorm", use `p` to specify the norm order (defaults to 2).
         """
         # Validate input shape
         if reference_features.ndim != 2:
@@ -41,7 +44,7 @@ class AlignmentBase(ABC):
         self.reference_length = reference_features.shape[1]
 
         # set up alignment costs
-        self.cost_metric = get_cost_metric(cost_metric)
+        self.cost_metric = get_cost_metric(cost_metric, **kwargs)
 
     @abstractmethod
     def align(self, query_features: np.ndarray):
