@@ -1,4 +1,7 @@
-"""Define Euclidean cost metrics for two features. Written with optimized numpy and numba""" #TODO: write tests for this file
+"""Define Euclidean cost metrics for two features. Written with optimized numpy and numba"""  # TODO: write tests for this file
+
+# standard imports
+import warnings
 
 # library imports
 import numpy as np
@@ -29,7 +32,7 @@ def lp_dist_vec2vec(fv_1: np.ndarray, fv_2: np.ndarray, p: int):
     """
 
     diff = fv_1 - fv_2
-    return np.power(np.sum(np.power(diff, p)), 1 / p)
+    return np.power(np.sum(np.power(np.abs(diff), p)), 1 / p)
 
 
 class LpNormDistance(CostMetric):
@@ -37,6 +40,12 @@ class LpNormDistance(CostMetric):
 
     def __init__(self, p: int):
         super().__init__(v2v_cost=lp_dist_vec2vec, name=f"l{p}-norm")
+        if p <= 0:
+            raise ValueError(f"p must be a positive integer, got {p}")
+        if p == 1:
+            warnings.warn("p=1 is equivalent to Manhattan distance, use ManhattanDistance instead")
+        elif p == 2:
+            warnings.warn("p=2 is equivalent to Euclidean distance, use EuclideanDistance instead")
         self.p = p
 
     ### Matrix-Matrix Lp Norm Distance
@@ -58,7 +67,7 @@ class LpNormDistance(CostMetric):
         diff = fm_1[:, :, np.newaxis] - fm_2[:, np.newaxis, :]
 
         # Sum over features axis and return (n_frames_1, n_frames_2)
-        return np.power(np.sum(np.power(diff, self.p), axis=0), 1 / self.p)
+        return np.power(np.sum(np.power(np.abs(diff), self.p), axis=0), 1 / self.p)
 
     ### Vector-Matrix Lp Norm Distance
     def mat2vec(self, fm_1: np.ndarray, fv_2: np.ndarray):
@@ -78,7 +87,7 @@ class LpNormDistance(CostMetric):
         diff = fm_1 - fv_2
 
         # Sum over features axis
-        return np.power(np.sum(np.power(diff, self.p), axis=0), 1 / self.p)
+        return np.power(np.sum(np.power(np.abs(diff), self.p), axis=0), 1 / self.p)
 
     ### Vector-Vector Lp Norm Distance
     def vec2vec(self, fv_1: np.ndarray, fv_2: np.ndarray):

@@ -5,7 +5,14 @@ import numpy as np
 import pytest
 
 # custom imports
-from core.cost import CostMetric, CosineDistance, EuclideanDistance, get_cost_metric
+from core.cost import (
+    CostMetric,
+    CosineDistance,
+    EuclideanDistance,
+    LpNormDistance,
+    ManhattanDistance,
+    get_cost_metric,
+)
 
 
 class TestCostRegistry:
@@ -135,3 +142,21 @@ class TestCostRegistry:
         distances = metric.mat2mat(mat1, mat2)
         assert distances.shape == (2, 2)
         assert distances[0, 0] == pytest.approx(0.0, abs=1e-6)
+
+    def test_lpnorm_metric_with_default_p(self):
+        """Test that lpnorm metric with default p=2 is created."""
+        metric = get_cost_metric("lpnorm")
+        assert isinstance(metric, LpNormDistance)
+        assert metric.p == 2
+
+    def test_lpnorm_metric_with_p(self):
+        """Test that lpnorm metric with p=3 is created."""
+        metric = get_cost_metric("lpnorm", p=3)
+        assert isinstance(metric, LpNormDistance)
+        assert metric.p == 3
+
+    def test_manhattan_metric(self):
+        """Test that manhattan metric is created."""
+        metric = get_cost_metric("manhattan")
+        assert isinstance(metric, ManhattanDistance)
+        assert metric.name == "manhattan"
