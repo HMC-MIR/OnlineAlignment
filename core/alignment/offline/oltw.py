@@ -81,9 +81,9 @@ class OfflineOLTW(OfflineAlignment):
         x, y = self._get_min_cost_indices(D_normalized)
 
         if x < self.t:
-            return ROW
-        if y < self.j:
             return COLUMN
+        if y < self.j:
+            return ROW
         else:
             return BOTH
 
@@ -94,15 +94,21 @@ class OfflineOLTW(OfflineAlignment):
             D_normalized (np.ndarray): Normalized accumulated cost matrix.
         """
 
-        # Access the last c elements of the current row and column, or all history if c is None
+        # Access the last c elements of the current row and column, or all history if c is None.
+        # IMPORTANT: indices within `cur_row` / `cur_col` are *local* to the slice, so we track
+        # the slice start offsets to convert the argmin back into global indices of D_normalized.
         if self.c is not None:
+            row_start = max(0, self.j - self.c + 1)
+            col_start = max(0, self.t - self.c + 1)
             cur_row = D_normalized[
-                self.t, max(0, self.j - self.c + 1) : self.j + 1
+                self.t, row_start : self.j + 1
             ]  # last c columns in row t
             cur_col = D_normalized[
-                max(0, self.t - self.c + 1) : self.t + 1, self.j
+                col_start : self.t + 1, self.j
             ]  # last c rows in column j
         else:
+            row_start = 0
+            col_start = 0
             cur_row = D_normalized[self.t, : self.j + 1]  # all previous columns in row t
             cur_col = D_normalized[: self.t + 1, self.j]  # all previous rows in column j
 
@@ -125,9 +131,11 @@ class OfflineOLTW(OfflineAlignment):
                 min_cost_location = COLUMN
 
         if min_cost_location == ROW:
-            return self.t, min_cost_idx  # (reference_idx, query_idx)
+            # min_cost_idx is local to cur_row; convert to global query index
+            return self.t, row_start + min_cost_idx  # (reference_idx, query_idx)
         else:
-            return min_cost_idx, self.j  # (reference_idx, query_idx)
+            # min_cost_idx is local to cur_col; convert to global reference index
+            return col_start + min_cost_idx, self.j  # (reference_idx, query_idx)
 
     def align(self, query_features: np.ndarray):
         """Align query features to reference features.
