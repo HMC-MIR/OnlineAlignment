@@ -209,8 +209,10 @@ class OfflineOLTW(OfflineAlignment):
 def run_offline_oltw(
     reference_features: np.ndarray,
     query_features: np.ndarray,
-    steps: np.ndarray = OLTW_STEPS,
-    weights: np.ndarray = OLTW_WEIGHTS,
+    window_steps: np.ndarray = OLTW_STEPS,
+    window_weights: np.ndarray = OLTW_WEIGHTS,
+    transition_steps: np.ndarray = OLTW_STEPS,
+    transition_weights: np.ndarray = OLTW_WEIGHTS,
     cost_metric: str | Callable | CostMetric = "cosine",
     max_run_count: int = 3,
     c: int = None,
@@ -220,12 +222,14 @@ def run_offline_oltw(
     Args:
         reference_features: Reference features. Shape (n_features, n_frames)
         query_features: Query features. Shape (n_features, n_frames)
-        steps: DTW steps. Shape (n_steps, 2)
-        weights: DTW weights. Shape (n_steps, 1)
+        window_steps: DTW window steps. Shape (n_steps, 2)
+        window_weights: DTW window weights. Shape (n_steps, 1)
+        transition_steps: OLTW transition steps. Shape (n_steps, 2)
+        transition_weights: OLTW transition weights. Shape (n_steps, 1)
         cost_metric: Cost metric to use for computing distances.
             Can be a string name, callable function, or CostMetric instance.
         max_run_count: Maximum run count. Defaults to 3.
         c: band size for comparing costs.
     """
-    offline_oltw = OfflineOLTW(reference_features, steps, weights, cost_metric, max_run_count, c)
+    offline_oltw = OfflineOLTW(reference_features, window_steps, window_weights, transition_steps, transition_weights, cost_metric, max_run_count, c)
     return offline_oltw.align(query_features)
