@@ -27,8 +27,10 @@ class OfflineOLTW(OfflineAlignment):
     def __init__(
         self,
         reference_features: np.ndarray,
-        steps: np.ndarray = OLTW_STEPS,
-        weights: np.ndarray = OLTW_WEIGHTS,
+        window_steps: np.ndarray = OLTW_STEPS,
+        window_weights: np.ndarray = OLTW_WEIGHTS,
+        transition_steps: np.ndarray = OLTW_STEPS,
+        transition_weights: np.ndarray = OLTW_WEIGHTS,
         cost_metric: str | Callable | CostMetric = "cosine",
         max_run_count: int = 3,
         c: int = None,
@@ -38,8 +40,11 @@ class OfflineOLTW(OfflineAlignment):
         Args:
             reference_features: Features for the reference audio.
                 Shape (n_features, n_frames)
-            steps: DTW steps. Shape (n_steps, 2)
-            weights: DTW weights. Shape (n_steps, 1)
+            window_steps: cost matrix windowing steps. Shape (n_steps, 2)
+            window_weights: cost matrix windowing weights. Shape (n_steps, 1)
+            transition_steps: OLTW transition steps. Shape (n_steps, 2)
+                Index 0 corresponds to reference (row), index 1 corresponds to query (column), index 2 corresponds to both (row and column)
+            transition_weights: OLTW transition weights. Shape (n_steps, 1)
             cost_metric: Cost metric to use for computing distances.
                 Can be a string name, callable function, or CostMetric instance.
             max_run_count: Maximum run count. Defaults to 3.
@@ -52,9 +57,12 @@ class OfflineOLTW(OfflineAlignment):
         self.c = c
 
         # steps and weights
-        _validate_dtw_steps_weights(steps, weights)
-        self.steps = steps
-        self.weights = weights
+        _validate_dtw_steps_weights(window_steps, window_weights)
+        self.window_steps = window_steps
+        self.window_weights = window_weights
+        _validate_dtw_steps_weights(transition_steps, transition_weights)
+        self.transition_steps = transition_steps
+        self.transition_weights = transition_weights
 
         # initialize alignment parameters
         self.max_run_count = max_run_count
@@ -162,8 +170,8 @@ class OfflineOLTW(OfflineAlignment):
         D = dtw(
             backtrack=False,  # no backtrack since we only care about the accumulated cost matrix
             C=C,
-            step_sizes_sigma=self.steps,
-            weights_mul=self.weights,
+            step_sizes_sigma=self.window_steps,
+            weights_mul=self.window_weights,
         )
 
         # normalize by path length (manhattan distance)
@@ -178,9 +186,10 @@ class OfflineOLTW(OfflineAlignment):
         while self.t < ref_length - 1 and self.j < query_length - 1:
             inc = self.get_inc(D_normalized)  # get increment direction
 
+            # TODO: handle transition steps
             # increment indices while staying within bounds
             if inc != COLUMN and self.t < ref_length - 1:
-                self.t += 1  # increment reference (row)
+                self.t += 1  # increment reference (row) by window steps
             if inc != ROW and self.j < query_length - 1:
                 self.j += 1  # increment query (column)
             if inc == self.prev:
