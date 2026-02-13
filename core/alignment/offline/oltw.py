@@ -30,7 +30,6 @@ class OfflineOLTW(OfflineAlignment):
         window_steps: np.ndarray = OLTW_STEPS,
         window_weights: np.ndarray = OLTW_WEIGHTS,
         transition_steps: np.ndarray = OLTW_STEPS,
-        transition_weights: np.ndarray = OLTW_WEIGHTS,
         cost_metric: str | Callable | CostMetric = "cosine",
         max_run_count: int = 3,
         c: int = None,
@@ -44,7 +43,6 @@ class OfflineOLTW(OfflineAlignment):
             window_weights: cost matrix windowing weights. Shape (n_steps, 1)
             transition_steps: OLTW transition steps. Shape (n_steps, 2)
                 Index 0 corresponds to reference (row), index 1 corresponds to query (column), index 2 corresponds to both (row and column)
-            transition_weights: OLTW transition weights. Shape (n_steps, 1)
             cost_metric: Cost metric to use for computing distances.
                 Can be a string name, callable function, or CostMetric instance.
             max_run_count: Maximum run count. Defaults to 3.
@@ -56,13 +54,17 @@ class OfflineOLTW(OfflineAlignment):
         self.t, self.j = 0, 0  # t is reference (row), j is query (column)
         self.c = c
 
-        # steps and weights
+        # validate steps and weights
         _validate_dtw_steps_weights(window_steps, window_weights)
         self.window_steps = window_steps
         self.window_weights = window_weights
-        _validate_dtw_steps_weights(transition_steps, transition_weights)
+        
+        # validate and store transition steps
+        # transition_steps should have shape (3, 2) for [BOTH, ROW, COLUMN] transitions
+        # Each row specifies (row_increment, column_increment)
+        if transition_steps.shape[0] != 3 or transition_steps.shape[1] != 2:
+            raise ValueError(f"transition_steps must have shape (3, 2), got {transition_steps.shape}")
         self.transition_steps = transition_steps
-        self.transition_weights = transition_weights
 
         # initialize alignment parameters
         self.max_run_count = max_run_count
@@ -186,12 +188,14 @@ class OfflineOLTW(OfflineAlignment):
         while self.t < ref_length - 1 and self.j < query_length - 1:
             inc = self.get_inc(D_normalized)  # get increment direction
 
-            # TODO: handle transition steps
-            # increment indices while staying within bounds
-            if inc != COLUMN and self.t < ref_length - 1:
-                self.t += 1  # increment reference (row) by window steps
-            if inc != ROW and self.j < query_length - 1:
-                self.j += 1  # increment query (column)
+            # increment indices using transition steps while staying within bounds
+            # transition_steps[inc] gives [row_increment, column_increment]
+            row_step, col_step = self.transition_steps[inc]
+            self.t += row_step  # increment reference (row) by transition step
+            self.t = min(self.t, ref_length - 1)  # clamp to max
+            self.j += col_step  # increment query (column) by transition step
+            self.j = min(self.j, query_length - 1)  # clamp to max
+            
             if inc == self.prev:
                 self.cur_run_count += 1
             else:
@@ -212,7 +216,6 @@ def run_offline_oltw(
     window_steps: np.ndarray = OLTW_STEPS,
     window_weights: np.ndarray = OLTW_WEIGHTS,
     transition_steps: np.ndarray = OLTW_STEPS,
-    transition_weights: np.ndarray = OLTW_WEIGHTS,
     cost_metric: str | Callable | CostMetric = "cosine",
     max_run_count: int = 3,
     c: int = None,
@@ -225,11 +228,10 @@ def run_offline_oltw(
         window_steps: DTW window steps. Shape (n_steps, 2)
         window_weights: DTW window weights. Shape (n_steps, 1)
         transition_steps: OLTW transition steps. Shape (n_steps, 2)
-        transition_weights: OLTW transition weights. Shape (n_steps, 1)
         cost_metric: Cost metric to use for computing distances.
             Can be a string name, callable function, or CostMetric instance.
         max_run_count: Maximum run count. Defaults to 3.
         c: band size for comparing costs.
     """
-    offline_oltw = OfflineOLTW(reference_features, window_steps, window_weights, transition_steps, transition_weights, cost_metric, max_run_count, c)
+    offline_oltw = OfflineOLTW(reference_features, window_steps, window_weights, transition_steps, cost_metric, max_run_count, c)
     return offline_oltw.align(query_features)
