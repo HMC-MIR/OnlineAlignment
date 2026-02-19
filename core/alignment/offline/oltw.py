@@ -6,10 +6,12 @@ from typing import Callable
 # library imports
 import numpy as np
 from librosa.sequence import dtw
+from numba import njit
 
 # core imports
 from ...constants import OLTW_STEPS, OLTW_WEIGHTS
 from ...cost import CostMetric, normalize_by_path_length
+from ...cost.cosine import cosine_mat2mat_parallel
 
 # custom imports
 from .base import OfflineAlignment
@@ -19,6 +21,96 @@ from ..utils import _validate_dtw_steps_weights, _validate_query_features_shape
 BOTH = 0
 ROW = 1
 COLUMN = 2
+
+
+# ---------------------------------------------------------------------------
+# Numba-compiled OLTW path walk (no Python in the inner loop)
+# c_int < 0 means "no band" (c is None). prev_int < 0 means no previous step.
+# ---------------------------------------------------------------------------
+
+
+@njit(cache=True)
+def _get_min_cost_indices_numba(t: int, j: int, c_int: int, D_normalized: np.ndarray):
+    """Min cost indices in current row/column; row wins ties. Returns (x, y)."""
+    if c_int >= 0:
+        row_start = max(0, j - c_int + 1)
+        col_start = max(0, t - c_int + 1)
+        cur_row = D_normalized[t, row_start : j + 1]
+        cur_col = D_normalized[col_start : t + 1, j]
+    else:
+        row_start = 0
+        col_start = 0
+        cur_row = D_normalized[t, : j + 1]
+        cur_col = D_normalized[: t + 1, j]
+
+    row_min = np.min(cur_row)
+    row_min_idx = np.argmin(cur_row)
+    col_min = np.min(cur_col)
+    col_min_idx = np.argmin(cur_col)
+    if row_min <= col_min:
+        return t, row_start + row_min_idx
+    return col_start + col_min_idx, j
+
+
+@njit(cache=True)
+def _get_inc_numba(
+    t: int,
+    j: int,
+    c_int: int,
+    cur_run_count: int,
+    prev_int: int,
+    max_run_count: int,
+    D_normalized: np.ndarray,
+) -> int:
+    """Return BOTH=0, ROW=1, or COLUMN=2."""
+    if c_int >= 0 and t < c_int:
+        return BOTH
+    if cur_run_count >= max_run_count:
+        return COLUMN if prev_int == ROW else ROW
+    x, y = _get_min_cost_indices_numba(t, j, c_int, D_normalized)
+    if x < t:
+        return COLUMN
+    if y < j:
+        return ROW
+    return BOTH
+
+
+@njit(cache=True)
+def _oltw_path_numba(
+    D_normalized: np.ndarray,
+    window_steps: np.ndarray,
+    max_run_count: int,
+    c_int: int,
+    ref_length: int,
+    query_length: int,
+):
+    """Compute OLTW path in Numba. Returns (path_buf, path_len). path_buf is (2, max_path_len)."""
+    max_path_len = ref_length + query_length
+    path_buf = np.zeros((2, max_path_len), dtype=np.int64)
+    path_buf[0, 0] = 0
+    path_buf[1, 0] = 0
+    path_len = 1
+    t, j = 0, 0
+    cur_run_count = 0
+    prev_int = -1  # no previous step
+
+    while t < ref_length - 1 and j < query_length - 1:
+        inc = _get_inc_numba(t, j, c_int, cur_run_count, prev_int, max_run_count, D_normalized)
+        row_step = window_steps[inc, 0]
+        col_step = window_steps[inc, 1]
+        t = min(t + row_step, ref_length - 1)
+        j = min(j + col_step, query_length - 1)
+        if inc == prev_int:
+            cur_run_count += 1
+        else:
+            cur_run_count = 1
+        if inc != BOTH:
+            prev_int = inc
+        path_buf[0, path_len] = j
+        path_buf[1, path_len] = t
+        path_len += 1
+
+    return path_buf, path_len
 
 
 class OfflineOLTW(OfflineAlignment):
@@ -33,6 +125,7 @@ class OfflineOLTW(OfflineAlignment):
         cost_metric: str | Callable | CostMetric = "cosine",
         max_run_count: int = 3,
         c: int = None,
+        use_parallel_cost: bool = False,
     ):
         """Initialize OfflineOLTW algorithm.
 
@@ -47,14 +140,20 @@ class OfflineOLTW(OfflineAlignment):
                 Can be a string name, callable function, or CostMetric instance.
             max_run_count: Maximum run count. Defaults to 3.
             c: band size for comparing costs. #TODO: optimize based on banding
+            use_parallel_cost: If True and cost_metric is cosine, compute cost matrix in parallel (Numba).
+                Can help when BLAS is single-threaded; may be slower when BLAS is already multi-threaded.
         """
         super().__init__(reference_features, cost_metric)
+        self.use_parallel_cost = use_parallel_cost
 
         # initialize query and reference locations
         self.t, self.j = 0, 0  # t is reference (row), j is query (column)
         self.c = c
 
         # validate steps and weights
+        DTW_steps = np.array(DTW_steps)
+        DTW_weights = np.array(DTW_weights)
+        window_steps = np.array(window_steps)
         _validate_dtw_steps_weights(DTW_steps, DTW_weights)
         self.DTW_steps = DTW_steps
         self.DTW_weights = DTW_weights
@@ -71,8 +170,8 @@ class OfflineOLTW(OfflineAlignment):
         self.cur_run_count = 0
         self.prev = None  # previous step taken
 
-        # initialize path (0-indexed)
-        self.path = [[0], [0]]  # TODO: provide optimizations
+        # path built in align() with preallocated arrays
+        self.path = None
 
     def get_inc(self, D_normalized: np.ndarray):
         """Check which direction to increment based on normalized costs."""
@@ -103,49 +202,26 @@ class OfflineOLTW(OfflineAlignment):
         Args:
             D_normalized (np.ndarray): Normalized accumulated cost matrix.
         """
-
         # Access the last c elements of the current row and column, or all history if c is None.
-        # IMPORTANT: indices within `cur_row` / `cur_col` are *local* to the slice, so we track
-        # the slice start offsets to convert the argmin back into global indices of D_normalized.
         if self.c is not None:
             row_start = max(0, self.j - self.c + 1)
             col_start = max(0, self.t - self.c + 1)
-            cur_row = D_normalized[
-                self.t, row_start : self.j + 1
-            ]  # last c columns in row t
-            cur_col = D_normalized[
-                col_start : self.t + 1, self.j
-            ]  # last c rows in column j
+            cur_row = D_normalized[self.t, row_start : self.j + 1]
+            cur_col = D_normalized[col_start : self.t + 1, self.j]
         else:
             row_start = 0
             col_start = 0
-            cur_row = D_normalized[self.t, : self.j + 1]  # all previous columns in row t
-            cur_col = D_normalized[: self.t + 1, self.j]  # all previous rows in column j
+            cur_row = D_normalized[self.t, : self.j + 1]
+            cur_col = D_normalized[: self.t + 1, self.j]
 
-        # initialize min
-        min_cost = np.inf
-        min_cost_location = ROW  # index if we're at row or column
-        min_cost_idx = -1  # index where we are on the row or column
-
-        # loop through to find minimum indices
-        for idx, cost in enumerate(cur_row):  # row first (reference row, query indices)
-            if cost < min_cost:
-                min_cost = cost
-                min_cost_idx = idx
-                min_cost_location = ROW
-
-        for idx, cost in enumerate(cur_col):  # then column (query column, reference indices)
-            if cost < min_cost:
-                min_cost = cost
-                min_cost_idx = idx
-                min_cost_location = COLUMN
-
-        if min_cost_location == ROW:
-            # min_cost_idx is local to cur_row; convert to global query index
-            return self.t, row_start + min_cost_idx  # (reference_idx, query_idx)
-        else:
-            # min_cost_idx is local to cur_col; convert to global reference index
-            return col_start + min_cost_idx, self.j  # (reference_idx, query_idx)
+        # Vectorized: row wins ties (same as original loop order)
+        row_min = np.min(cur_row)
+        row_min_idx = np.argmin(cur_row)
+        col_min = np.min(cur_col)
+        col_min_idx = np.argmin(cur_col)
+        if row_min <= col_min:
+            return self.t, row_start + row_min_idx
+        return col_start + col_min_idx, self.j
 
     def align(self, query_features: np.ndarray):
         """Align query features to reference features.
@@ -163,10 +239,15 @@ class OfflineOLTW(OfflineAlignment):
         self.t, self.j = 0, 0
         self.cur_run_count = 0
         self.prev = None
-        self.path = [[0], [0]]
 
-        # compute full cost matrix
-        C = self.cost_metric.mat2mat(self.reference_features, query_features)
+        # compute full cost matrix (optional Numba parallel for cosine)
+        if self.use_parallel_cost and getattr(self.cost_metric, "name", None) == "cosine":
+            C = cosine_mat2mat_parallel(
+                np.ascontiguousarray(self.reference_features, dtype=np.float64),
+                np.ascontiguousarray(query_features, dtype=np.float64),
+            )
+        else:
+            C = self.cost_metric.mat2mat(self.reference_features, query_features)
 
         # compute accumulated cost matrix up front
         D = dtw(
@@ -178,35 +259,23 @@ class OfflineOLTW(OfflineAlignment):
 
         # normalize by path length (manhattan distance)
         D_normalized = normalize_by_path_length(D)
+        if D_normalized.dtype != np.float64:
+            D_normalized = np.ascontiguousarray(D_normalized, dtype=np.float64)
 
-        # dimensions for bounds checking (0-indexed)
         query_length = query_features.shape[1]
         ref_length = self.reference_length
+        c_int = int(self.c) if self.c is not None else -1
+        window_steps_i64 = np.asarray(self.window_steps, dtype=np.int64)
 
-        # main recursion loop
-        # stop when we have reached the end of either query or reference
-        while self.t < ref_length - 1 and self.j < query_length - 1:
-            inc = self.get_inc(D_normalized)  # get increment direction
-
-            # increment indices using transition steps while staying within bounds
-            # window_steps[inc] gives [row_increment, column_increment]
-            row_step, col_step = self.window_steps[inc]
-            self.t += row_step  # increment reference (row) by transition step
-            self.t = min(self.t, ref_length - 1)  # clamp to max
-            self.j += col_step  # increment query (column) by transition step
-            self.j = min(self.j, query_length - 1)  # clamp to max
-            
-            if inc == self.prev:
-                self.cur_run_count += 1
-            else:
-                self.cur_run_count = 1
-            if inc != BOTH:
-                self.prev = inc
-
-            self.path[0].append(self.j)  # query (column)
-            self.path[1].append(self.t)  # reference (row)
-
-        self.path = np.array(self.path)
+        path_buf, path_len = _oltw_path_numba(
+            D_normalized,
+            window_steps_i64,
+            self.max_run_count,
+            c_int,
+            ref_length,
+            query_length,
+        )
+        self.path = path_buf[:, :path_len]
         return self.path
 
 
@@ -219,6 +288,7 @@ def run_offline_oltw(
     cost_metric: str | Callable | CostMetric = "cosine",
     max_run_count: int = 3,
     c: int = None,
+    use_parallel_cost: bool = True,
 ):
     """Offline OLTW algorithm.
 
@@ -232,6 +302,10 @@ def run_offline_oltw(
             Can be a string name, callable function, or CostMetric instance.
         max_run_count: Maximum run count. Defaults to 3.
         c: band size for comparing costs.
+        use_parallel_cost: If True and cost_metric is cosine, use Numba-parallel cost matrix.
     """
-    offline_oltw = OfflineOLTW(reference_features, DTW_steps, DTW_weights, window_steps, cost_metric, max_run_count, c)
+    offline_oltw = OfflineOLTW(
+        reference_features, DTW_steps, DTW_weights, window_steps,
+        cost_metric, max_run_count, c, use_parallel_cost=use_parallel_cost,
+    )
     return offline_oltw.align(query_features)
