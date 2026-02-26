@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 # custom imports
-from core.cost import (
+from online_alignment.cost import (
     CostMetric,
     CosineDistance,
     EuclideanDistance,

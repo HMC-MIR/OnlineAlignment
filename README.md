@@ -94,10 +94,10 @@ pip install "pytest>=7.0.0" "black>=22.0.0" "flake8>=4.0.0" "mypy>=0.950"
 conda activate online_alignment  # or your environment name
 
 # Test import
-python -c "from core.cost import CosineDistance, EuclideanDistance; print('Installation successful!')"
+python -c "from online_alignment.cost import CosineDistance, EuclideanDistance; print('Installation successful!')"
 
 # Run tests (if dev dependencies installed)
-pytest tests/core/cost/ -v
+pytest tests/ -v
 ```
 
 ## Troubleshooting

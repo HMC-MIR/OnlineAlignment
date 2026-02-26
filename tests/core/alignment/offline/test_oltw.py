@@ -6,10 +6,10 @@ import pytest
 from librosa.sequence import dtw
 
 # custom imports
-from core.alignment.offline.oltw import OfflineOLTW, BOTH, ROW, COLUMN
-from core.constants import OLTW_STEPS, OLTW_WEIGHTS
-from core.cost import normalize_by_path_length
-from core.alignment.utils import _validate_query_features_shape
+from online_alignment.alignment.offline.oltw import OfflineOLTW, BOTH, ROW, COLUMN
+from online_alignment.constants import OLTW_STEPS, OLTW_WEIGHTS
+from online_alignment.cost import normalize_by_path_length
+from online_alignment.alignment.utils import _validate_query_features_shape
 
 
 def _reference_get_min_cost_indices(t, j, c, D_normalized):

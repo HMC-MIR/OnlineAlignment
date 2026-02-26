@@ -16,8 +16,8 @@ import pytest
 from numba import njit
 
 # custom imports
-from core.alignment.offline.noa import OfflineNOA, run_offline_noa
-from core.constants import NOA_STEPS, NOA_WEIGHTS
+from online_alignment.alignment.offline.noa import OfflineNOA, run_offline_noa
+from online_alignment.constants import NOA_STEPS, NOA_WEIGHTS
 
 
 # ---------------------------------------------------------------------------

@@ -43,7 +43,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*"]
+include = ["online_alignment*"]
 
 [tool.black]
 line-length = 100

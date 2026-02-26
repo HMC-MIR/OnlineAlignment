@@ -4,21 +4,22 @@ This package provides scalable and extensible code for online audio alignment
 with implementations of NOA (Naive Online Alignment) and OLTW (Online Time Warping).
 
 The package is organized into core modules:
-    - core.alignment: Alignment algorithms (online and offline)
-    - core.cost: Cost metrics for computing distances
-    - core.features: Feature extraction (online and offline)
-    - core.timescale: Time scale modification (online and offline)
+    - online_alignment.alignment: Alignment algorithms (online and offline)
+    - online_alignment.cost: Cost metrics for computing distances
+    - online_alignment.features: Feature extraction (online and offline)
 """
 
-# Core modules
-from . import core
+# Submodules
+from . import alignment, cost, features
 
 # Alignment algorithms
-from .core.alignment import AlignmentBase, OnlineAlignment
-from .core.alignment.online import NOA, OLTW
+from .alignment import AlignmentBase, OnlineAlignment
+from .alignment.online import NOA, OLTW
+from .alignment.offline import OfflineAlignment, OfflineOLTW, run_offline_oltw
+from .alignment.offline import OfflineNOA, run_offline_noa
 
 # Cost metrics
-from .core.cost import (
+from .cost import (
     CostMetric,
     CosineDistance,
     EuclideanDistance,
@@ -26,7 +27,7 @@ from .core.cost import (
 )
 
 # Feature extraction
-from .core.features import (
+from .features import (
     FeatureExtractor,
     OnlineFeatureExtractor,
     OfflineFeatureExtractor,
@@ -35,13 +36,20 @@ from .core.features import (
 __version__ = "0.1.0"
 
 __all__ = [
-    # Core modules
-    "core",
+    # Submodules
+    "alignment",
+    "cost",
+    "features",
     # Alignment
     "AlignmentBase",
     "OnlineAlignment",
     "NOA",
     "OLTW",
+    "OfflineAlignment",
+    "OfflineOLTW",
+    "run_offline_oltw",
+    "OfflineNOA",
+    "run_offline_noa",
     # Cost metrics
     "CostMetric",
     "CosineDistance",

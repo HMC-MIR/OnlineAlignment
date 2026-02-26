@@ -1,4 +1,4 @@
-"""Constants for the core package."""
+"""Constants for the online_alignment package."""
 
 import numpy as np
 

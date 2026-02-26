@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 # custom imports
-from core.cost import EuclideanDistance
+from online_alignment.cost import EuclideanDistance
 
 
 class TestEuclideanDistance:

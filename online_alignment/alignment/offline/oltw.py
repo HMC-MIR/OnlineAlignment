@@ -157,7 +157,7 @@ class OfflineOLTW(OfflineAlignment):
         _validate_dtw_steps_weights(DTW_steps, DTW_weights)
         self.DTW_steps = DTW_steps
         self.DTW_weights = DTW_weights
-        
+
         # validate and store transition steps
         # window_steps should have shape (3, 2) for [BOTH, ROW, COLUMN] transitions
         # Each row specifies (row_increment, column_increment)

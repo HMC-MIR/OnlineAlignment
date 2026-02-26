@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 # custom imports
-from core.cost import LpNormDistance
+from online_alignment.cost import LpNormDistance
 
 
 class TestLpNormDistance:
