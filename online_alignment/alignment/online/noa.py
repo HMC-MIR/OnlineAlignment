@@ -16,6 +16,7 @@ from .base import OnlineAlignment
 from ..utils import _validate_dtw_steps_weights, _validate_prev_alignment_path
 # TODO: add validate query features
 
+
 class NOA(OnlineAlignment):
     """Naive Online Alignment Algorithm without banding."""
 

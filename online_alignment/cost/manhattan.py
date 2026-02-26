@@ -1,4 +1,5 @@
-"""Define Manhattan cost metrics for two features. Written with optimized numpy and numba""" #TODO: write tests for this file
+"""Manhattan cost metrics. Optimized numpy and numba."""
+# TODO: write tests for this file
 
 # library imports
 import numpy as np

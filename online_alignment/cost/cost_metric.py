@@ -49,7 +49,7 @@ class CostMetric:
         n_frames = fm_1.shape[1]
         distances = np.zeros(n_frames, dtype=np.float32)
         for i in range(n_frames):
-            distances[i] = self.vec2vec(fm_1[:, i : i + 1], fv_2)
+            distances[i] = self.vec2vec(fm_1[:, i:i + 1], fv_2)
         return distances
 
     def mat2mat(self, fm_1: np.ndarray, fm_2: np.ndarray):
@@ -71,5 +71,5 @@ class CostMetric:
         distances = np.zeros((n_frames_1, n_frames_2), dtype=np.float32)
         for i in range(n_frames_1):
             for j in range(n_frames_2):
-                distances[i, j] = self.vec2vec(fm_1[:, i : i + 1], fm_2[:, j : j + 1])
+                distances[i, j] = self.vec2vec(fm_1[:, i:i + 1], fm_2[:, j:j + 1])
         return distances

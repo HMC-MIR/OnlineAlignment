@@ -5,8 +5,8 @@ from numba import njit
 @njit
 def normalize_by_path_length(D: np.ndarray) -> np.ndarray:
     """
-    Normalize an accumulated cost matrix D by its Manhattan distance from the starting point (0, 0).
-    For each element D[i, j], the normalization factor is (i + j + 1) to avoid division by zero at (0, 0).
+    Normalize accumulated cost matrix D by Manhattan distance from (0, 0).
+    For each D[i, j], normalization factor is (i + j + 1) to avoid div by zero.
 
     Args:
         D (np.ndarray): Accumulated cost matrix.

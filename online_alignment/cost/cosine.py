@@ -86,7 +86,7 @@ def cosine_mat2mat_parallel(fm_1: np.ndarray, fm_2: np.ndarray) -> np.ndarray:
     return C
 
 
-### Helper Functions
+# Helper Functions
 def _check_l2_normalized_vec(fv_1: np.ndarray) -> bool:
     """
     Checks if a feature vector fv_1 is L2 normalized or not.
@@ -107,7 +107,7 @@ class CosineDistance(CostMetric):
     def __init__(self):
         super().__init__(v2v_cost=cosine_dist_vec2vec, name="cosine")
 
-    ### Matrix-Matrix Cosine Distance
+    # Matrix-Matrix Cosine Distance
     def mat2mat(self, fm_1: np.ndarray, fm_2: np.ndarray, normalized: bool = None):
         """
         Calculates cosine distance between two feature matrices fm_1 and fm_2.
@@ -142,7 +142,7 @@ class CosineDistance(CostMetric):
         # Compute cosine distance
         return 1 - fm_1.T @ fm_2
 
-    ### Vector-Matrix Cosine Distance
+    # Vector-Matrix Cosine Distance
     def mat2vec(self, fm_1: np.ndarray, fv_2: np.ndarray, normalized: bool = None):
         """
         Calculates cosine distance between a feature matrix fm_1 and a feature frame vector fv_2.
@@ -173,7 +173,7 @@ class CosineDistance(CostMetric):
         # Convert to cosine distance
         return 1 - (fm_1.T @ fv_2).flatten()
 
-    ### Vector-Vector Cosine Distance
+    # Vector-Vector Cosine Distance
     def vec2vec(self, fv_1: np.ndarray, fv_2: np.ndarray, normalized: bool = None):
         """
         Calculates cosine distance between two feature frame vectors fv_1 and fv_2.

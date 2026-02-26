@@ -1,4 +1,5 @@
-"""Define Euclidean cost metrics for two features. Written with optimized numpy and numba"""  # TODO: write tests for this file
+"""Lp-norm cost metrics. Optimized numpy and numba."""
+# TODO: write tests for this file
 
 # standard imports
 import warnings
@@ -20,7 +21,7 @@ def lp_dist_vec2vec(fv_1: np.ndarray, fv_2: np.ndarray, p: int):
     .. math::
         d(fv_1, fv_2) = \left( \sum_{i=1}^{n} |fv_1[i] - fv_2[i]|^p \right)^{1/p}
 
-    where :math:`n` is the dimension of the feature frames and :math:`p` is the dimension of the norm.
+    where :math:`n` is feature dimension and :math:`p` is the norm order.
 
     Args:
         fv_1 (np.ndarray): reference feature frame, shape (n_features, 1)
@@ -48,19 +49,19 @@ class LpNormDistance(CostMetric):
             warnings.warn("p=2 is equivalent to Euclidean distance, use EuclideanDistance instead")
         self.p = p
 
-    ### Matrix-Matrix Lp Norm Distance
+    # Matrix-Matrix Lp Norm Distance
     def mat2mat(self, fm_1: np.ndarray, fm_2: np.ndarray):
         """Calculates lp norm distance between two feature matrices fm_1 and fm_2."""
         diff = fm_1[:, :, np.newaxis] - fm_2[:, np.newaxis, :]
         return np.power(np.sum(np.power(np.abs(diff), self.p), axis=0), 1 / self.p)
 
-    ### Vector-Matrix Lp Norm Distance
+    # Vector-Matrix Lp Norm Distance
     def mat2vec(self, fm_1: np.ndarray, fv_2: np.ndarray):
-        """Calculates lp norm distance between a feature matrix fm_1 and a feature frame vector fv_2."""
+        """Lp norm distance between feature matrix fm_1 and feature vector fv_2."""
         diff = fm_1 - fv_2
         return np.power(np.sum(np.power(np.abs(diff), self.p), axis=0), 1 / self.p)
 
-    ### Vector-Vector Lp Norm Distance
+    # Vector-Vector Lp Norm Distance
     def vec2vec(self, fv_1: np.ndarray, fv_2: np.ndarray):
         """Calculates lp norm distance between two feature frame vectors fv_1 and fv_2."""
         return self.v2v_cost(fv_1, fv_2, self.p)

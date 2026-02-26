@@ -35,13 +35,13 @@ def _get_min_cost_indices_numba(t: int, j: int, c_int: int, D_normalized: np.nda
     if c_int >= 0:
         row_start = max(0, j - c_int + 1)
         col_start = max(0, t - c_int + 1)
-        cur_row = D_normalized[t, row_start : j + 1]
-        cur_col = D_normalized[col_start : t + 1, j]
+        cur_row = D_normalized[t, row_start:j + 1]
+        cur_col = D_normalized[col_start:t + 1, j]
     else:
         row_start = 0
         col_start = 0
-        cur_row = D_normalized[t, : j + 1]
-        cur_col = D_normalized[: t + 1, j]
+        cur_row = D_normalized[t, :j + 1]
+        cur_col = D_normalized[:t + 1, j]
 
     row_min = np.min(cur_row)
     row_min_idx = np.argmin(cur_row)
@@ -135,13 +135,14 @@ class OfflineOLTW(OfflineAlignment):
             DTW_steps: cost matrix windowing steps. Shape (n_steps, 2)
             DTW_weights: cost matrix windowing weights. Shape (n_steps, 1)
             window_steps: OLTW transition steps. Shape (n_steps, 2)
-                Index 0 corresponds to reference (row), index 1 corresponds to query (column), index 2 corresponds to both (row and column)
+                Index 0 = reference (row), 1 = query (column), 2 = both.
             cost_metric: Cost metric to use for computing distances.
                 Can be a string name, callable function, or CostMetric instance.
             max_run_count: Maximum run count. Defaults to 3.
-            c: band size for comparing costs. #TODO: optimize based on banding
-            use_parallel_cost: If True and cost_metric is cosine, compute cost matrix in parallel (Numba).
-                Can help when BLAS is single-threaded; may be slower when BLAS is already multi-threaded.
+            c: band size for comparing costs. # TODO: optimize based on banding
+            use_parallel_cost: If True and cost_metric is cosine, compute cost
+                matrix in parallel (Numba). Can help when BLAS is single-threaded;
+                may be slower when BLAS is already multi-threaded.
         """
         super().__init__(reference_features, cost_metric)
         self.use_parallel_cost = use_parallel_cost
@@ -206,13 +207,13 @@ class OfflineOLTW(OfflineAlignment):
         if self.c is not None:
             row_start = max(0, self.j - self.c + 1)
             col_start = max(0, self.t - self.c + 1)
-            cur_row = D_normalized[self.t, row_start : self.j + 1]
-            cur_col = D_normalized[col_start : self.t + 1, self.j]
+            cur_row = D_normalized[self.t, row_start:self.j + 1]
+            cur_col = D_normalized[col_start:self.t + 1, self.j]
         else:
             row_start = 0
             col_start = 0
-            cur_row = D_normalized[self.t, : self.j + 1]
-            cur_col = D_normalized[: self.t + 1, self.j]
+            cur_row = D_normalized[self.t, :self.j + 1]
+            cur_col = D_normalized[:self.t + 1, self.j]
 
         # Vectorized: row wins ties (same as original loop order)
         row_min = np.min(cur_row)
