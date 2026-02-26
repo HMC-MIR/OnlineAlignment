@@ -28,7 +28,7 @@ jobs:
         run: |
           pip install twine
           twine upload \
-            --repository-url https://upload.pkg.github.com/HMC-MIR \
+            --repository-url https://upload.pkg.github.com/HMC-MIR/legacy/ \
             --username ${{ github.actor }} \
             --password ${{ secrets.GITHUB_TOKEN }} \
             dist/*
