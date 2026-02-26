@@ -94,10 +94,10 @@ For users wanting to simply drop the library into their project without cloning 
 ```bash
 # Navigate to the GitHub Releases page: https://github.com/HMC-MIR/OnlineAlignment/releases
 # Copy the link to the latest .whl file and run:
-pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.1.2/online_alignment-0.1.2-py3-none-any.whl
+pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.1.3/online_alignment-0.1.3-py3-none-any.whl
 
 # Or install the source tarball
-pip install https://github.com/HMC-MIR/OnlineAlignment/archive/refs/tags/v0.1.2.tar.gz
+pip install https://github.com/HMC-MIR/OnlineAlignment/archive/refs/tags/v0.1.3.tar.gz
 ```
 
 ## Verify Installation
