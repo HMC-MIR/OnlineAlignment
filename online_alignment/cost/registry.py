@@ -44,7 +44,7 @@ _COST_REGISTRY: dict[str, Union[CostMetric, Callable]] = {
 
 
 def get_cost_metric(
-    cost_metric: str | Callable | CostMetric,
+    cost_metric: Union[str, Callable, CostMetric],
     **kwargs,
 ) -> CostMetric:
     """Get a CostMetric instance from various input types."""

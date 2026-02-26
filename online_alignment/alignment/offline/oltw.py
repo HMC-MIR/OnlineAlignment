@@ -1,7 +1,7 @@
 """Fully offline version of Online Time Warping (OLTW) algorithm per Dixon et al."""
 
 # standard imports
-from typing import Callable
+from typing import Callable, Union
 
 # library imports
 import numpy as np
@@ -122,7 +122,7 @@ class OfflineOLTW(OfflineAlignment):
         DTW_steps: np.ndarray = OLTW_STEPS,
         DTW_weights: np.ndarray = OLTW_WEIGHTS,
         window_steps: np.ndarray = OLTW_STEPS,
-        cost_metric: str | Callable | CostMetric = "cosine",
+        cost_metric: Union[str, Callable, CostMetric] = "cosine",
         max_run_count: int = 3,
         c: int = None,
         use_parallel_cost: bool = False,
@@ -285,7 +285,7 @@ def run_offline_oltw(
     DTW_steps: np.ndarray = OLTW_STEPS,
     DTW_weights: np.ndarray = OLTW_WEIGHTS,
     window_steps: np.ndarray = OLTW_STEPS,
-    cost_metric: str | Callable | CostMetric = "cosine",
+    cost_metric: Union[str, Callable, CostMetric] = "cosine",
     max_run_count: int = 3,
     c: int = None,
     use_parallel_cost: bool = True,

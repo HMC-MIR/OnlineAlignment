@@ -2,6 +2,7 @@
 
 # standard imports
 from abc import abstractmethod
+from typing import Optional
 
 # library imports
 import numpy as np
@@ -16,8 +17,8 @@ class OfflineFeatureExtractor(FeatureExtractor):
     def extract(
         self,
         signal: np.ndarray,
-        frame_size: int | None = None,
-        hop_size: int | None = None,
+        frame_size: Optional[int] = None,
+        hop_size: Optional[int] = None,
     ) -> np.ndarray:
         """Extract features from a complete signal. Returns shape (n_features, n_frames)."""
         pass

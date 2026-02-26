@@ -1,7 +1,7 @@
 """Fully offline version of the Naive Online Alignment (NOA) algorithm."""
 
 # standard imports
-from typing import Callable
+from typing import Callable, Optional, Union
 
 # library imports
 import numpy as np
@@ -170,7 +170,7 @@ class OfflineNOA(OfflineAlignment):
         reference_features: np.ndarray,
         steps: np.ndarray = NOA_STEPS,
         weights: np.ndarray = NOA_WEIGHTS,
-        cost_metric: str | Callable | CostMetric = "cosine",
+        cost_metric: Union[str, Callable, CostMetric] = "cosine",
         normalize: bool = True,
         monotonic: bool = False,
     ):
@@ -205,7 +205,7 @@ class OfflineNOA(OfflineAlignment):
         self.monotonic = monotonic
 
         # path produced by the most recent align() call
-        self.path: np.ndarray | None = None
+        self.path: Optional[np.ndarray] = None
 
     def align(self, query_features: np.ndarray) -> np.ndarray:
         """Align query features to reference features using NOA.
@@ -263,7 +263,7 @@ def run_offline_noa(
     query_features: np.ndarray,
     steps: np.ndarray = NOA_STEPS,
     weights: np.ndarray = NOA_WEIGHTS,
-    cost_metric: str | Callable | CostMetric = "cosine",
+    cost_metric: Union[str, Callable, CostMetric] = "cosine",
     normalize: bool = True,
     monotonic: bool = False,
 ) -> np.ndarray:

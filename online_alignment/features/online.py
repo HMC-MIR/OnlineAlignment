@@ -2,7 +2,7 @@
 
 # standard imports
 from abc import abstractmethod
-from typing import Iterator
+from typing import Iterator, Optional
 
 # library imports
 import numpy as np
@@ -13,7 +13,7 @@ from .base import FeatureExtractor
 class OnlineFeatureExtractor(FeatureExtractor):
     """Base class for online feature extraction."""
 
-    def __init__(self, frame_size: int, hop_size: int, n_features: int | None = None):
+    def __init__(self, frame_size: int, hop_size: int, n_features: Optional[int] = None):
         super().__init__(n_features=n_features)
         self.frame_size = frame_size
         self.hop_size = hop_size

@@ -2,6 +2,7 @@
 
 # standard imports
 from abc import ABC, abstractmethod
+from typing import Optional
 
 # library imports
 import numpy as np
@@ -10,7 +11,7 @@ import numpy as np
 class FeatureExtractor(ABC):
     """Base class for feature extraction from audio signals."""
 
-    def __init__(self, n_features: int | None = None):
+    def __init__(self, n_features: Optional[int] = None):
         self.n_features = n_features
 
     @abstractmethod

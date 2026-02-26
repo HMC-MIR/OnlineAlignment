@@ -2,7 +2,7 @@
 
 # standard imports
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Union
 
 # library imports
 import numpy as np
@@ -22,7 +22,7 @@ class AlignmentBase(ABC):
     def __init__(
         self,
         reference_features: np.ndarray,
-        cost_metric: str | Callable | CostMetric,
+        cost_metric: Union[str, Callable, CostMetric],
         **kwargs,
     ):
         """Initialize the alignment algorithm.

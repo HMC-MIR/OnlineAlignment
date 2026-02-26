@@ -1,7 +1,7 @@
 """Naive Online Alignment algorithm."""
 
 # standard imports
-from typing import Callable
+from typing import Callable, Union
 
 # library imports
 import numpy as np
@@ -24,7 +24,7 @@ class NOA(OnlineAlignment):
         reference_features: np.ndarray,
         steps: np.ndarray = DEFAULT_DTW_STEPS,
         weights: np.ndarray = DEFAULT_DTW_WEIGHTS,
-        cost_metric: str | Callable | CostMetric = "cosine",
+        cost_metric: Union[str, Callable, CostMetric] = "cosine",
         prev_alignment_path: np.ndarray = None,
     ):
         """Initialize NOA algorithm.
