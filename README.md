@@ -87,6 +87,19 @@ pip install -e ".[dev]"
 pip install "pytest>=7.0.0" "black>=22.0.0" "flake8>=4.0.0" "mypy>=0.950"
 ```
 
+## Option 4: Install Pre-built Wheels from GitHub Releases
+
+For users wanting to simply drop the library into their project without cloning the source code, you can install the pre-built wheels directly from GitHub Releases:
+
+```bash
+# Navigate to the GitHub Releases page: https://github.com/HMC-MIR/OnlineAlignment/releases
+# Copy the link to the latest .whl file and run:
+pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.1.2/online_alignment-0.1.2-py3-none-any.whl
+
+# Or install the source tarball
+pip install https://github.com/HMC-MIR/OnlineAlignment/archive/refs/tags/v0.1.2.tar.gz
+```
+
 ## Verify Installation
 
 ```bash

@@ -24,11 +24,10 @@ jobs:
           pip install build
           python -m build
 
-      - name: Publish to GitHub Packages
-        run: |
-          pip install twine
-          twine upload \
-            --repository-url https://upload.pkg.github.com/HMC-MIR/legacy/ \
-            --username ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }} \
-            dist/*
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
