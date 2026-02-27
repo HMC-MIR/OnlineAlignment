@@ -15,7 +15,7 @@ from ...cost.cosine import cosine_mat2mat_parallel
 
 # custom imports
 from .base import OfflineAlignment
-from ..utils import _validate_dtw_steps_weights, _validate_query_features_shape
+from ..utils import _validate_dtw_steps_weights, _validate_query_features_shape, _arrange_oltw_steps
 
 # set constants for incrementing
 BOTH = 0
@@ -155,7 +155,8 @@ class OfflineOLTW(OfflineAlignment):
         DTW_steps = np.array(DTW_steps)
         DTW_weights = np.array(DTW_weights)
         window_steps = np.array(window_steps)
-        _validate_dtw_steps_weights(DTW_steps, DTW_weights)
+        _validate_dtw_steps_weights(DTW_steps, DTW_weights) # validate DTW steps and weights
+        window_steps = _arrange_oltw_steps(window_steps) # arrange steps by comparing slopes
         self.DTW_steps = DTW_steps
         self.DTW_weights = DTW_weights
 

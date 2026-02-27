@@ -3,6 +3,44 @@
 # library imports
 import numpy as np
 
+from typing import Tuple
+
+def _arrange_oltw_steps(steps: np.ndarray) -> np.ndarray:
+    """Arrange OLTW steps by comparing slopes.
+    Highest slope = vertical, middle = diagonal, lowest = horizontal.
+
+    Args:
+        steps: OLTW steps array.
+
+    Returns:
+        np.ndarray: Arranged OLTW steps.
+    """
+    steps = np.asarray(steps)
+
+    # Calculate slope as row increment divided by column increment
+    # Handle division by zero: use np.inf so verticals (=0 col increment) sort highest
+    slopes = np.zeros(steps.shape[0])
+    for i, (r, c) in enumerate(steps):
+        if c == 0 and r != 0:
+            slopes[i] = np.inf  # vertical step (row step, no col step)
+        elif r == 0 and c != 0:
+            slopes[i] = 0.0     # horizontal step
+        elif r == 0 and c == 0:
+            slopes[i] = -np.inf # degenerate, shouldn't happen
+        else:
+            slopes[i] = r / c   # diagonal or irregular
+
+    # Get sorted indices: vertical (inf), then diagonal, then horizontal (0)
+    # Reverse so highest slopes (vertical) come first.
+    sorted_indices = np.argsort(-slopes)
+
+    arranged_steps = steps[sorted_indices]
+    # Swap index 0 and 1 at the end
+    # so that we have diagonal, vertical, horizontal order
+    if arranged_steps.shape[0] > 1:
+        arranged_steps[[0, 1]] = arranged_steps[[1, 0]]
+    return arranged_steps
+
 
 def _validate_dtw_steps_weights(steps: np.ndarray, weights: np.ndarray) -> None:
     """Validate DTW steps and weights.
