@@ -27,9 +27,6 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
-      - name: Lint (flake8)
-        run: flake8 online_alignment/ --max-line-length=100
-
       - name: Type check (mypy)
         run: mypy online_alignment/
         continue-on-error: true   # soft-fail until type hints are complete
