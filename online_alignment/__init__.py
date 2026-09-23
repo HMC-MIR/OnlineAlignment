@@ -1,7 +1,7 @@
 """Online audio alignment package.
 
 This package provides scalable and extensible code for online audio alignment
-with implementations of NOA (Naive Online Alignment) and OLTW (Online Time Warping).
+with implementations of SOA (Simple Online Alignment) and OLTW (Online Time Warping).
 
 The package is organized into core modules:
     - online_alignment.alignment: Alignment algorithms (online and offline)
@@ -14,15 +14,22 @@ from . import alignment, cost, features
 
 # Alignment algorithms
 from .alignment import AlignmentBase, OnlineAlignment
-from .alignment.online import NOA, OLTW
-from .alignment.offline import OfflineAlignment, OfflineOLTW, run_offline_oltw
-from .alignment.offline import OfflineNOA, run_offline_noa
+from .alignment.online import SOA, OLTW
+from .alignment.offline import (
+    OfflineAlignment,
+    OfflineOLTW,
+    OfflineSOA,
+    run_offline_oltw,
+    run_offline_soa,
+)
 
 # Cost metrics
 from .cost import (
     CostMetric,
     CosineDistance,
     EuclideanDistance,
+    LpNormDistance,
+    ManhattanDistance,
     get_cost_metric,
 )
 
@@ -43,17 +50,19 @@ __all__ = [
     # Alignment
     "AlignmentBase",
     "OnlineAlignment",
-    "NOA",
+    "SOA",
     "OLTW",
     "OfflineAlignment",
+    "OfflineSOA",
+    "run_offline_soa",
     "OfflineOLTW",
     "run_offline_oltw",
-    "OfflineNOA",
-    "run_offline_noa",
     # Cost metrics
     "CostMetric",
     "CosineDistance",
     "EuclideanDistance",
+    "LpNormDistance",
+    "ManhattanDistance",
     "get_cost_metric",
     # Features
     "FeatureExtractor",

@@ -136,3 +136,13 @@ class TestEuclideanDistance:
         )
 
         np.testing.assert_array_almost_equal(distances_mat, distances_vec)
+
+
+def test_euclidean_constructs_without_warning():
+    """EuclideanDistance does not emit the LpNormDistance p=2 warning."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        metric = EuclideanDistance()
+    assert metric.p == 2

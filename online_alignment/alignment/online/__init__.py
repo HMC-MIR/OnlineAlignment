@@ -1,11 +1,11 @@
 """Online alignment algorithms."""
 
 from .base import OnlineAlignment
-from .noa import NOA
+from .soa import SOA
 from .oltw import OLTW
 
 __all__ = [
     "OnlineAlignment",
-    "NOA",
+    "SOA",
     "OLTW",
 ]

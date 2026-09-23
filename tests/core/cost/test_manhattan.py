@@ -178,3 +178,14 @@ class TestManhattanDistance:
 
         # Triangle inequality: d13 <= d12 + d23
         assert d13 <= d12 + d23 + 1e-6  # Add small epsilon for floating point
+
+
+def test_manhattan_is_l1_without_warning():
+    """ManhattanDistance is the p=1 norm and does not warn on construction."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        metric = ManhattanDistance()
+    assert metric.p == 1
+    assert metric.name == "manhattan"

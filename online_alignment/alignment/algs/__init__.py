@@ -1,7 +1,21 @@
-"""Alignment algorithms for online and offline applications."""
+"""Numba kernels shared by the online and offline alignment algorithms."""
 
-from .noa import noa_row_update
+from .soa import soa_row_update
+from .oltw import (
+    BOTH,
+    ROW,
+    COLUMN,
+    oltw_fill_column,
+    oltw_fill_row,
+    oltw_get_inc,
+)
 
 __all__ = [
-    "noa_row_update",
+    "soa_row_update",
+    "BOTH",
+    "ROW",
+    "COLUMN",
+    "oltw_fill_column",
+    "oltw_fill_row",
+    "oltw_get_inc",
 ]

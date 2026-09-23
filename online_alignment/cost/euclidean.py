@@ -1,5 +1,4 @@
 """Euclidean cost metrics. Optimized numpy and numba."""
-# TODO: write tests for this file
 
 # library imports
 import numpy as np

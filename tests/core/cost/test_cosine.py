@@ -168,3 +168,23 @@ class TestCosineDistance:
     def test_v2v_cost_attribute(self, cosine_metric):
         """Test that v2v_cost is callable."""
         assert callable(cosine_metric.v2v_cost)
+
+
+def test_block_kernels_match_full_matrix():
+    """Cosine block kernels are bit-identical to the full parallel matrix on any block."""
+    from online_alignment.cost.cosine import (
+        cosine_mat2mat_numba,
+        cosine_mat2mat_parallel,
+        cosine_mat2mat_prenormalized,
+        cosine_normalize_columns,
+    )
+
+    rng = np.random.default_rng(0)
+    a = rng.standard_normal((12, 40))
+    b = rng.standard_normal((12, 30))
+    full = cosine_mat2mat_parallel(a, b)
+    np.testing.assert_array_equal(cosine_mat2mat_numba(a, b), full)
+    np.testing.assert_array_equal(cosine_mat2mat_numba(a[:, 5:9], b[:, 3:4]), full[5:9, 3:4])
+    an, bn = cosine_normalize_columns(a), cosine_normalize_columns(b)
+    np.testing.assert_array_equal(cosine_mat2mat_prenormalized(an, bn), full)
+    np.testing.assert_array_equal(cosine_mat2mat_prenormalized(an[:, 7:8], bn[:, 2:20]), full[7:8, 2:20])
