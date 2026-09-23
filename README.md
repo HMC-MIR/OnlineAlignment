@@ -14,6 +14,25 @@ implements two algorithms, each usable online (frame by frame, bounded memory) o
 The offline versions run the online algorithm over the whole query, so an online run
 produces exactly the same path as the offline one.
 
+## Paper
+
+This package implements SOA from *A Simple Alternative to Online Time Warping* by
+Chengyi Tang, Sayema Lubis, Katie Baakkonen, Alan Lu and TJ Tsai (Harvey Mudd College).
+The paper's experiments live in two companion repositories:
+
+- [SimRealtimeMazurkaBenchmark (`vienna4x22` branch)](https://github.com/HMC-MIR/SimRealtimeMazurkaBenchmark/tree/vienna4x22):
+  the Mazurka and Vienna 4×22 benchmarks.
+- [PianoConcertoAccompaniment (`icassp` branch)](https://github.com/HMC-MIR/PianoConcertoAccompaniment/tree/icassp):
+  the Piano Concerto benchmark and the real-time concerto accompaniment system.
+
+The paper's systems correspond to these calls:
+
+| Paper | Package |
+|---|---|
+| SOA | `run_offline_soa(reference, query)` or `SOA(reference)` |
+| SOA-Mono | `run_offline_soa(reference, query, monotonic=True)` |
+| OLTW-Global | `run_offline_oltw(reference, query, c=None)` |
+
 ## Installation
 
 ```bash
