@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1
+
+Faster SOA and OLTW. Paths are bit-identical to 0.2.0. On Mazurka chroma features:
+- SOA: 10.8 s → 2.5 s on a 10k × 10k-frame pair (the reference is normalized once instead
+  of on every frame).
+- OLTW with cosine runs each step in a single Numba call: `c=500` 1.5 s → 0.6 s on the same
+  pair (about 50 µs per frame online); `c=None` 18 s → 8.6 s on a 17.6k × 11k pair (0.1.5
+  took 15.5 s).
+
+### Added
+- `CostMetric.bind_reference(reference)`, which returns a per-frame cost function and lets a
+  metric precompute work on a fixed reference (cosine normalizes it once).
+
 ## 0.2.0
 
 Breaking release: NOA is renamed to SOA, and OLTW is now Dixon's banded algorithm.
@@ -10,8 +23,6 @@ Breaking release: NOA is renamed to SOA, and OLTW is now Dixon's banded algorith
   cost rows, and OLTW with a finite `c` keeps a ring buffer of about `c × c` cells.
 - Online and offline versions share one implementation, so they produce identical paths.
 - `ManhattanDistance` and `LpNormDistance` are exported from the top-level package.
-- `CostMetric.bind_reference(reference)`, which returns a per-frame cost function and lets a
-  metric precompute work on a fixed reference (cosine normalizes it once).
 - `CHANGELOG.md`, usage documentation, and `scripts/time_alignment.py` for timing both
   algorithms offline and online.
 
@@ -27,14 +38,6 @@ Breaking release: NOA is renamed to SOA, and OLTW is now Dixon's banded algorith
 - Paths are `int64` for both algorithms (SOA was `int32`).
 - `librosa` and `scipy` are no longer runtime dependencies; `librosa` is a dev dependency
   used by the tests.
-
-### Performance
-All paths are bit-identical to before. On Mazurka chroma features:
-- SOA: 10.8 s → 2.5 s on a 10k × 10k-frame pair (the reference is normalized once instead
-  of on every frame).
-- OLTW with cosine runs each step in a single Numba call: `c=500` 1.5 s → 0.6 s on the same
-  pair (about 50 µs per frame online); `c=None` 18 s → 8.6 s on a 17.6k × 11k pair (0.1.5
-  took 15.5 s).
 
 ### Removed
 - OLTW's `use_parallel_cost` option. Cosine costs always use the exact per-cell kernel.
