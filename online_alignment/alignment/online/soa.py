@@ -66,6 +66,9 @@ class SOA(OnlineAlignment):
         self._dm = steps[:, 1].astype(np.int64)
         self._dw = weights.astype(np.float32)
 
+        # local costs against the fixed reference
+        self._costs = self.cost_metric.bind_reference(self.reference_features)
+
         # ring buffer of accumulated cost rows
         self._D = np.empty((int(self._dn.max()) + 1, self.reference_length), dtype=np.float32)
 
@@ -115,7 +118,7 @@ class SOA(OnlineAlignment):
         if self.finished:
             return self.position
 
-        costs = self.cost_metric.mat2vec(self.reference_features, query_frame)
+        costs = self._costs(query_frame)
         self._D[i % self._D.shape[0]].fill(np.inf)
         best_j = soa_row_update(i, costs, self._D, self._dn, self._dm, self._dw, self.normalize)
 

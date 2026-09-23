@@ -17,7 +17,7 @@ produces exactly the same path as the offline one.
 ## Installation
 
 ```bash
-pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.2.0/online_alignment-0.2.0-py3-none-any.whl
+pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.2.1/online_alignment-0.2.1-py3-none-any.whl
 ```
 
 Or from source, for development:
@@ -97,5 +97,5 @@ online_alignment/
 
 Bump the version in `pyproject.toml` and `online_alignment/__init__.py` (a test checks they
 match), add an entry to `CHANGELOG.md`, then push a tag:
-`git tag v0.2.0 && git push --tags`. The publish workflow builds the wheel and creates a
+`git tag v0.2.1 && git push --tags`. The publish workflow builds the wheel and creates a
 GitHub release.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1
+
+Faster SOA and OLTW. Paths are bit-identical to 0.2.0. On Mazurka chroma features:
+- SOA: 10.8 s → 2.5 s on a 10k × 10k-frame pair (the reference is normalized once instead
+  of on every frame).
+- OLTW with cosine runs each step in a single Numba call: `c=500` 1.5 s → 0.6 s on the same
+  pair (about 50 µs per frame online); `c=None` 18 s → 8.6 s on a 17.6k × 11k pair (0.1.5
+  took 15.5 s).
+
+### Added
+- `CostMetric.bind_reference(reference)`, which returns a per-frame cost function and lets a
+  metric precompute work on a fixed reference (cosine normalizes it once).
+
 ## 0.2.0
 
 Breaking release: NOA is renamed to SOA, and OLTW is now Dixon's banded algorithm.
