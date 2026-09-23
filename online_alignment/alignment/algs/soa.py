@@ -38,7 +38,15 @@ def soa_row_update(
         Reference column index with the lowest (normalized) accumulated cost.
     """
     n_rows, ref_length = D.shape
+    n_steps = dn.shape[0]
     cur = i % n_rows
+
+    # ring-buffer row of each step's predecessor, or -1 if it is before the first row
+    prev_rows = np.empty(n_steps, dtype=np.int64)
+    for k in range(n_steps):
+        prev_i = i - dn[k]
+        prev_rows[k] = prev_i % n_rows if prev_i >= 0 else -1
+
     best_j = 0
     best_cost = np.inf
 
@@ -47,14 +55,12 @@ def soa_row_update(
         best_step_score = np.inf
         best_step = -1
 
-        for k in range(dn.shape[0]):
-            prev_i = i - dn[k]
+        for k in range(n_steps):
             prev_j = j - dm[k]
-
-            if prev_i < 0 or prev_j < 0 or prev_j >= ref_length:
+            if prev_rows[k] < 0 or prev_j < 0:
                 continue
 
-            cur_cost = D[prev_i % n_rows, prev_j] + costs[j] * dw[k]
+            cur_cost = D[prev_rows[k], prev_j] + costs[j] * dw[k]
             if normalize:
                 score = cur_cost / (i + 1 + j + 1)  # normalize by path length
             else:

@@ -52,6 +52,19 @@ class CostMetric:
             distances[i] = self.vec2vec(fm_1[:, i:i + 1], fv_2)
         return distances
 
+    def bind_reference(self, fm_1: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
+        """Return a function computing ``mat2vec(fm_1, fv_2)`` for a fixed reference.
+
+        Subclasses can override this to precompute work on the reference once.
+
+        Args:
+            fm_1: Reference feature matrix, shape (n_features, n_frames)
+
+        Returns:
+            Function mapping a query frame to its distance vector, shape (n_frames,).
+        """
+        return lambda fv_2: self.mat2vec(fm_1, fv_2)
+
     def mat2mat(self, fm_1: np.ndarray, fm_2: np.ndarray):
         """Calculates distance between two feature matrices fm_1 and fm_2.
 

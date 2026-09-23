@@ -1,5 +1,8 @@
 """Define cosine cost metrics for two features. Written with optimized numpy & numba functions."""
 
+# standard imports
+from typing import Callable
+
 # library imports
 import numpy as np
 from numba import njit, prange
@@ -240,6 +243,23 @@ class CosineDistance(CostMetric):
 
         # Convert to cosine distance
         return 1 - (fm_1.T @ fv_2).flatten()
+
+    def bind_reference(self, fm_1: np.ndarray) -> Callable[[np.ndarray], np.ndarray]:
+        """Return ``fv_2 -> mat2vec(fm_1, fv_2)`` with the reference normalized once.
+
+        Gives bit-identical results to ``mat2vec`` with ``normalized=None``.
+        """
+        norms_1 = np.linalg.norm(fm_1, ord=2, axis=0, keepdims=True)
+        ref_is_normalized = np.allclose(norms_1, 1.0, atol=1e-6)
+        fm_1_normalized = fm_1 / (norms_1 + 1e-10)
+
+        def mat2vec_bound(fv_2: np.ndarray) -> np.ndarray:
+            norm_2 = np.linalg.norm(fv_2, ord=2)
+            if ref_is_normalized and np.isclose(norm_2, 1.0, atol=1e-6):
+                return 1 - (fm_1.T @ fv_2).flatten()
+            return 1 - (fm_1_normalized.T @ (fv_2 / (norm_2 + 1e-10))).flatten()
+
+        return mat2vec_bound
 
     # Vector-Vector Cosine Distance
     def vec2vec(self, fv_1: np.ndarray, fv_2: np.ndarray, normalized: bool = None):

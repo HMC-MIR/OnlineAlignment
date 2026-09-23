@@ -1,7 +1,7 @@
 """Online Time Warping (OLTW) algorithm per Dixon (2005)."""
 
 # standard imports
-from typing import Callable, List, Optional, Union
+from typing import Callable, Optional, Union
 
 # library imports
 import numpy as np
@@ -14,6 +14,14 @@ from ...cost.cosine import cosine_mat2mat_prenormalized, cosine_normalize_column
 # local imports
 from .base import OnlineAlignment
 from ..algs import BOTH, oltw_fill_column, oltw_fill_row, oltw_get_inc
+from ..algs.oltw import (
+    STATE_J,
+    STATE_PATH_LEN,
+    STATE_PREV,
+    STATE_RUN_COUNT,
+    STATE_T,
+    oltw_advance_cosine,
+)
 from ..utils import (
     _arrange_oltw_steps,
     _validate_dtw_steps_weights,
@@ -108,6 +116,12 @@ class OLTW(OnlineAlignment):
         self._D = np.empty((self._n_rows, n_cols), dtype=np.float64)
         self._query = np.empty((self.n_features, n_cols), dtype=np.float64)
 
+        # path buffer, rows [query, reference]; grown as frames arrive
+        self._path_buf = np.zeros((2, self.reference_length + n_cols), dtype=np.int64)
+
+        # [t, j, run_count, prev, path_len]; t is reference (row), j is query (column)
+        self._state = np.zeros(5, dtype=np.int64)
+
         self.reset()
 
     # ------------------------------------------------------------------
@@ -117,12 +131,19 @@ class OLTW(OnlineAlignment):
     def reset(self) -> None:
         """Clear all alignment state so a new query can be aligned."""
         self._D.fill(np.inf)
-        self.t, self.j = 0, 0  # t is reference (row), j is query (column)
+        self._state[:] = (0, 0, 0, -1, 0)  # prev = -1: no non-BOTH transition yet
         self._last_frame = -1  # index of the newest query frame fed
-        self._run_count = 0
-        self._prev = -1  # last non-BOTH transition
         self._flushed = False
-        self._path: List[List[int]] = []
+
+    @property
+    def t(self) -> int:
+        """Current reference frame."""
+        return int(self._state[STATE_T])
+
+    @property
+    def j(self) -> int:
+        """Current query frame."""
+        return int(self._state[STATE_J])
 
     @property
     def position(self) -> int:
@@ -132,7 +153,7 @@ class OLTW(OnlineAlignment):
     @property
     def path(self) -> np.ndarray:
         """Warping path so far. Shape (2, n_path_points), rows [query, reference]."""
-        return np.array(self._path, dtype=np.int64).reshape(-1, 2).T
+        return self._path_buf[:, :self._state[STATE_PATH_LEN]].copy()
 
     @property
     def finished(self) -> bool:
@@ -140,7 +161,20 @@ class OLTW(OnlineAlignment):
         return self.t >= self.reference_length - 1
 
     def _reserve(self, n_frames: int) -> None:
-        """Grow the unbounded-band buffers to hold at least ``n_frames`` query frames."""
+        """Grow buffers to hold at least ``n_frames`` query frames.
+
+        The ring buffers only grow when the band is unbounded (c=None). The path
+        buffer always has room for every step up to ``n_frames`` frames: each
+        step advances the reference or the query, so the path has at most
+        ``reference_length + n_frames - 1`` points.
+        """
+        path_cap = self._path_buf.shape[1]
+        if path_cap < self.reference_length + n_frames:
+            new_cap = max(self.reference_length + n_frames, 2 * path_cap)
+            path_buf = np.zeros((2, new_cap), dtype=np.int64)
+            path_buf[:, :path_cap] = self._path_buf
+            self._path_buf = path_buf
+
         n_cols = self._D.shape[1]
         if self.c is not None or n_frames <= n_cols:
             return
@@ -150,6 +184,12 @@ class OLTW(OnlineAlignment):
         query = np.empty((self.n_features, new_cols), dtype=np.float64)
         query[:, :n_cols] = self._query
         self._D, self._query = D, query
+
+    def _append_path(self, j: int, t: int) -> None:
+        n = self._state[STATE_PATH_LEN]
+        self._path_buf[0, n] = j
+        self._path_buf[1, n] = t
+        self._state[STATE_PATH_LEN] = n + 1
 
     # ------------------------------------------------------------------
     # online interface
@@ -185,7 +225,7 @@ class OLTW(OnlineAlignment):
         # the path always starts at (0, 0)
         if L == 0:
             self._D[0, 0] = self._costs(0, 1, 0, 1)[0, 0]
-            self._path.append([0, 0])
+            self._append_path(0, 0)
             return self.t
 
         self._advance(final=False)
@@ -243,44 +283,55 @@ class OLTW(OnlineAlignment):
             final: True once the query has ended. Transitions past the last
                 frame are then clamped to it, and the path stops there.
         """
+        if self._is_cosine:
+            oltw_advance_cosine(
+                self._D, self._reference, self._query, self._state, self._path_buf,
+                self._window_steps, self._steps, self._weights, self._c_int,
+                self.max_run_count, self._last_frame, final,
+            )
+            return
+
+        # generic metrics: same algorithm as oltw_advance_cosine, with costs from the metric
         L = self._last_frame
         n_rows, n_cols = self._D.shape
         c = self.c
+        state = self._state
         while self.t < self.reference_length - 1 and self.j < L:
+            t, j = self.t, self.j
             inc = oltw_get_inc(
-                self._D, self.t, self.j, self._c_int, self._run_count, self._prev,
+                self._D, t, j, self._c_int, int(state[STATE_RUN_COUNT]), int(state[STATE_PREV]),
                 self.max_run_count,
             )
             dt, dj = self._window_steps[inc]
-            if not final and self.j + dj > L:
+            if not final and j + dj > L:
                 break  # wait for more query frames
 
-            t_new = min(self.t + dt, self.reference_length - 1)
-            j_new = min(self.j + dj, L)
+            t_new = min(t + dt, self.reference_length - 1)
+            j_new = min(j + dj, L)
 
             # new reference rows over the band of query frames
-            j_lo = 0 if c is None else max(0, self.j - c + 1)
-            for t in range(self.t + 1, t_new + 1):
+            j_lo = 0 if c is None else max(0, j - c + 1)
+            for tt in range(t + 1, t_new + 1):
                 if n_rows < self.reference_length:
-                    self._D[t % n_rows].fill(np.inf)
-                costs = self._costs(t, t + 1, j_lo, self.j + 1)[0]
-                oltw_fill_row(self._D, t, j_lo, costs, self._steps, self._weights)
+                    self._D[tt % n_rows].fill(np.inf)
+                costs = self._costs(tt, tt + 1, j_lo, j + 1)[0]
+                oltw_fill_row(self._D, tt, j_lo, costs, self._steps, self._weights)
 
             # new query columns over the band of reference frames
             t_lo = 0 if c is None else max(0, t_new - c + 1)
-            for j in range(self.j + 1, j_new + 1):
+            for jj in range(j + 1, j_new + 1):
                 if c is not None:
-                    self._D[:, j % n_cols].fill(np.inf)
-                costs = self._costs(t_lo, t_new + 1, j, j + 1)[:, 0]
-                oltw_fill_column(self._D, j, t_lo, costs, self._steps, self._weights)
+                    self._D[:, jj % n_cols].fill(np.inf)
+                costs = self._costs(t_lo, t_new + 1, jj, jj + 1)[:, 0]
+                oltw_fill_column(self._D, jj, t_lo, costs, self._steps, self._weights)
 
             # update run count
-            if inc == self._prev:
-                self._run_count += 1
+            if inc == state[STATE_PREV]:
+                state[STATE_RUN_COUNT] += 1
             else:
-                self._run_count = 1
+                state[STATE_RUN_COUNT] = 1
             if inc != BOTH:
-                self._prev = inc
+                state[STATE_PREV] = inc
 
-            self.t, self.j = t_new, j_new
-            self._path.append([self.j, self.t])
+            state[STATE_T], state[STATE_J] = t_new, j_new
+            self._append_path(j_new, t_new)
