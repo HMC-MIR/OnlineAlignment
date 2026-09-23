@@ -29,10 +29,12 @@ Breaking release: NOA is renamed to SOA, and OLTW is now Dixon's banded algorith
   used by the tests.
 
 ### Performance
-All paths are bit-identical to before; on a 10k × 10k-frame Mazurka pair:
-- SOA: 10.8 s → 2.5 s (the reference is normalized once instead of on every frame).
-- OLTW with cosine runs each step in a single Numba call: `c=500` 1.5 s → 0.6 s (about
-  50 µs per frame online), `c=None` 18 s → 8.6 s (0.1.5 took 15.5 s).
+All paths are bit-identical to before. On Mazurka chroma features:
+- SOA: 10.8 s → 2.5 s on a 10k × 10k-frame pair (the reference is normalized once instead
+  of on every frame).
+- OLTW with cosine runs each step in a single Numba call: `c=500` 1.5 s → 0.6 s on the same
+  pair (about 50 µs per frame online); `c=None` 18 s → 8.6 s on a 17.6k × 11k pair (0.1.5
+  took 15.5 s).
 
 ### Removed
 - OLTW's `use_parallel_cost` option. Cosine costs always use the exact per-cell kernel.
