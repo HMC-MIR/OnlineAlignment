@@ -1,3 +1,5 @@
+"""Cost metrics for computing distances between feature frames."""
+
 from .cost_metric import CostMetric
 from .cosine import CosineDistance, cosine_dist_vec2vec
 from .euclidean import EuclideanDistance, euclidean_dist_vec2vec

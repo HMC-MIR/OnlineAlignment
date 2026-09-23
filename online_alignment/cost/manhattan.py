@@ -1,5 +1,4 @@
 """Manhattan cost metrics. Optimized numpy and numba."""
-# TODO: write tests for this file
 
 # library imports
 import numpy as np
@@ -21,7 +20,7 @@ class ManhattanDistance(LpNormDistance):
     """Class for calculating Manhattan distance between feature vectors/matrices."""
 
     def __init__(self):
-        super().__init__(p=2)
+        super().__init__(p=1)
         self.v2v_cost = manhattan_dist_vec2vec
         self.name = "manhattan"
 

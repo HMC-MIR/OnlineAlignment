@@ -1,18 +1,17 @@
 """Alignment algorithms for audio signals."""
 
 from .base import AlignmentBase, OnlineAlignment
-from .online import NOA, OLTW
-from .offline import OfflineAlignment, OfflineOLTW, run_offline_oltw
-from .offline import OfflineNOA, run_offline_noa
+from .online import SOA, OLTW
+from .offline import OfflineAlignment, OfflineSOA, OfflineOLTW, run_offline_soa, run_offline_oltw
 
 __all__ = [
     "AlignmentBase",
     "OnlineAlignment",
-    "NOA",
+    "SOA",
     "OLTW",
     "OfflineAlignment",
-    "OfflineNOA",
-    "run_offline_noa",
+    "OfflineSOA",
+    "run_offline_soa",
     "OfflineOLTW",
     "run_offline_oltw",
 ]

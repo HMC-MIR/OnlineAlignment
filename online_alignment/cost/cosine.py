@@ -54,6 +54,74 @@ def _cosine_dist_vec2vec_normalized(fv_1: np.ndarray, fv_2: np.ndarray):
     return 1 - np.dot(fv_1.T, fv_2)  # optimize
 
 
+@njit(cache=True)
+def cosine_mat2mat_numba(fm_1: np.ndarray, fm_2: np.ndarray) -> np.ndarray:
+    """
+    Cosine distance matrix, computed cell by cell.
+    Columns of fm_1 and fm_2 are L2-normalized inside the function.
+    Shape: (n_frames_1, n_frames_2).
+
+    Each cell depends only on its two columns, so the result for a cell is
+    bit-identical no matter which block of the full matrix is computed. Keep
+    the arithmetic identical to cosine_mat2mat_parallel.
+    """
+    n_feat, n_ref = fm_1.shape
+    n_query = fm_2.shape[1]
+    C = np.empty((n_ref, n_query), dtype=fm_1.dtype)
+    norms_1 = np.empty(n_ref, dtype=fm_1.dtype)
+    norms_2 = np.empty(n_query, dtype=fm_2.dtype)
+    for i in range(n_ref):
+        n1 = 0.0
+        for k in range(n_feat):
+            n1 += fm_1[k, i] * fm_1[k, i]
+        norms_1[i] = np.sqrt(n1) + 1e-10
+    for j in range(n_query):
+        n2 = 0.0
+        for k in range(n_feat):
+            n2 += fm_2[k, j] * fm_2[k, j]
+        norms_2[j] = np.sqrt(n2) + 1e-10
+    for i in range(n_ref):
+        for j in range(n_query):
+            dot = 0.0
+            for k in range(n_feat):
+                dot += (fm_1[k, i] / norms_1[i]) * (fm_2[k, j] / norms_2[j])
+            C[i, j] = 1.0 - dot
+    return C
+
+
+@njit(cache=True)
+def cosine_normalize_columns(fm: np.ndarray) -> np.ndarray:
+    """L2-normalize columns with the same arithmetic as cosine_mat2mat_numba."""
+    n_feat, n_frames = fm.shape
+    out = np.empty((n_feat, n_frames), dtype=np.float64)
+    for i in range(n_frames):
+        n = 0.0
+        for k in range(n_feat):
+            n += fm[k, i] * fm[k, i]
+        norm = np.sqrt(n) + 1e-10
+        for k in range(n_feat):
+            out[k, i] = fm[k, i] / norm
+    return out
+
+
+@njit(cache=True)
+def cosine_mat2mat_prenormalized(fm_1: np.ndarray, fm_2: np.ndarray) -> np.ndarray:
+    """Cosine distance matrix for columns already normalized by cosine_normalize_columns.
+
+    Bit-identical to cosine_mat2mat_numba on the unnormalized inputs.
+    """
+    n_feat, n_ref = fm_1.shape
+    n_query = fm_2.shape[1]
+    C = np.empty((n_ref, n_query), dtype=np.float64)
+    for i in range(n_ref):
+        for j in range(n_query):
+            dot = 0.0
+            for k in range(n_feat):
+                dot += fm_1[k, i] * fm_2[k, j]
+            C[i, j] = 1.0 - dot
+    return C
+
+
 @njit(parallel=True, cache=True)
 def cosine_mat2mat_parallel(fm_1: np.ndarray, fm_2: np.ndarray) -> np.ndarray:
     """

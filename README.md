@@ -1,139 +1,101 @@
-Pacakge for online alignment with examples of NOA and OLTW.
+# online_alignment
 
-# Installation Guide
+Online audio-to-audio alignment in Python, with Numba-compiled inner loops. The package
+implements two algorithms, each usable online (frame by frame, bounded memory) or offline
+(on a complete query):
 
-This guide shows how to install the `online-alignment` package and its dependencies using conda.
+- **SOA** (Simple Online Alignment): for every query frame, extend the DTW accumulated
+  cost matrix by one row over the whole reference and report the reference frame with the
+  lowest (path-length-normalized) cost.
+- **OLTW** (Online Time Warping, [Dixon 2005](https://www.eecs.qmul.ac.uk/~simond/pub/2005/dafx05.pdf)):
+  follow a path through the cost matrix, computing only the cells within `c` frames of the
+  current position, and advance the reference, the query, or both at each step.
 
-## Option 1: Use Existing Environment
+The offline versions run the online algorithm over the whole query, so an online run
+produces exactly the same path as the offline one.
 
-If you already have the `online_alignment` conda environment:
-
-```bash
-# Activate the environment
-conda activate online_alignment
-
-# Install core dependencies
-conda install -c conda-forge numpy>=1.20.0 numba>=0.56.0
-
-# Install the package in editable mode
-pip install -e .
-
-# (Optional) Install dev dependencies for testing/development
-pip install -e ".[dev]"
-```
-
-## Option 2: Create New Environment from File
-
-### For basic usage:
+## Installation
 
 ```bash
-# Create environment from environment.yml
-conda env create -f environment.yml
-
-# Activate the environment
-conda activate online-alignment
+pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.2.0/online_alignment-0.2.0-py3-none-any.whl
 ```
 
-### For development (includes test tools):
+Or from source, for development:
 
 ```bash
-# Create environment from environment-dev.yml
-conda env create -f environment-dev.yml
-
-# Activate the environment
-conda activate online-alignment-dev
+git clone https://github.com/HMC-MIR/OnlineAlignment.git
+cd OnlineAlignment
+pip install -e ".[dev]"      # or: conda env create -f environment-dev.yml
+pytest
 ```
 
-## Option 3: Manual Installation
+The only runtime dependencies are `numpy` and `numba`. Python 3.9+ is supported.
 
-### Step 1: Create/Activate Environment
+## Usage
 
-```bash
-# Create a new environment (or use existing)
-conda create -n online-alignment python=3.10
-conda activate online-alignment
+Features are arrays of shape `(n_features, n_frames)`, e.g. chroma. Paths are integer
+frame indices of shape `(2, n_path_points)`: `path[0]` is the query frame and `path[1]`
+is the reference frame. Multiply by `hop_length / sample_rate` for seconds.
+
+### Offline
+
+```python
+from online_alignment import run_offline_oltw, run_offline_soa
+
+path = run_offline_oltw(reference, query, c=500)
+path = run_offline_soa(reference, query, monotonic=True)
 ```
 
-### Step 2: Install Core Dependencies
+### Online
 
-```bash
-# Install numpy and numba via conda (recommended for better compatibility)
-conda install -c conda-forge numpy>=1.20.0 numba>=0.56.0
+```python
+from online_alignment import OLTW
 
-# Or install via pip
-pip install "numpy>=1.20.0" "numba>=0.56.0"
+oltw = OLTW(reference, c=500)
+for frame in stream:              # frame shape (n_features,) or (n_features, 1)
+    ref_frame = oltw.feed(frame)  # current estimate of the reference position
+oltw.flush()                      # end of query: finish the path
+path = oltw.path
 ```
 
-### Step 3: Install the Package
+`SOA` has the same interface. `align(query)` on either class runs `reset()`, `feed()`
+for every frame, and `flush()`, then returns the path.
 
-```bash
-# Navigate to project directory
-cd /Users/jeudi/Desktop/OnlineAlignment
+### Parameters
 
-# Install in editable mode (recommended for development)
-pip install -e .
+| | SOA | OLTW |
+|---|---|---|
+| `steps`, `weights` | DTW steps as (query, reference) increments. Default `[[1,1],[1,2],[2,1]]`, weights `[1,1,2]` | DTW steps as (reference, query) increments. Default `[[1,0],[0,1],[1,1]]`, weights `[1,1,1]` |
+| `cost_metric` | `"cosine"` (default), `"euclidean"`, `"manhattan"`, `"lpnorm"`, a function of two vectors, or a `CostMetric` | same |
+| other | `normalize=True`: pick the best frame by path-length-normalized cost. `monotonic=False`: never move backwards (needs `normalize`) | `window_steps`: the three path transitions (reference-only, query-only, both), any order. `c=500`: band width, or `None` for unbounded. `max_run_count=3`: longest run of one transition |
 
-# Or install normally
-pip install .
+### Memory
+
+- **SOA** keeps `max(query_steps) + 1` rows of the cost matrix: `O(reference_length)`.
+- **OLTW** with a finite `c` keeps a ring buffer of about `c × c` cells, independent of
+  both sequence lengths. With `c=None` every cell up to the current position is computed,
+  which reproduces OLTW over the full DTW matrix, at `O(reference_length × query_length)`
+  memory.
+
+The warping path itself grows by one point per step.
+
+## Package layout
+
+```
+online_alignment/
+├── alignment/
+│   ├── algs/       # Numba kernels shared by online and offline versions
+│   ├── online/     # SOA, OLTW
+│   └── offline/    # OfflineSOA, OfflineOLTW, run_offline_soa, run_offline_oltw
+├── cost/           # cost metrics and the get_cost_metric registry
+└── features/       # feature extractor base classes
 ```
 
-### Step 4: (Optional) Install Dev Dependencies
+`scripts/time_alignment.py` times the algorithms on random sequences.
 
-```bash
-# Install development dependencies (pytest, black, flake8, mypy)
-pip install -e ".[dev]"
+## Releasing
 
-# Or install individually
-pip install "pytest>=7.0.0" "black>=22.0.0" "flake8>=4.0.0" "mypy>=0.950"
-```
-
-## Option 4: Install Pre-built Wheels from GitHub Releases
-
-For users wanting to simply drop the library into their project without cloning the source code, you can install the pre-built wheels directly from GitHub Releases:
-
-```bash
-# Navigate to the GitHub Releases page: https://github.com/HMC-MIR/OnlineAlignment/releases
-# Copy the link to the latest .whl file and run:
-pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.1.5/online_alignment-0.1.5-py3-none-any.whl
-
-# Or install the source tarball
-pip install https://github.com/HMC-MIR/OnlineAlignment/archive/refs/tags/v0.1.5.tar.gz
-```
-
-## Verify Installation
-
-```bash
-# Activate your environment
-conda activate online_alignment  # or your environment name
-
-# Test import
-python -c "from online_alignment.cost import CosineDistance, EuclideanDistance; print('Installation successful!')"
-
-# Run tests (if dev dependencies installed)
-pytest tests/ -v
-```
-
-## Troubleshooting
-
-### If numba installation fails:
-
-```bash
-# Try installing from conda-forge
-conda install -c conda-forge numba
-```
-
-### If you get import errors:
-
-```bash
-# Make sure you're in the project directory and environment is activated
-conda activate online_alignment
-cd /Users/jeudi/Desktop/OnlineAlignment
-python -c "import sys; print(sys.executable)"  # Should show conda env path
-```
-
-### Update dependencies:
-
-```bash
-conda activate online_alignment
-pip install --upgrade -e ".[dev]"
-```
+Bump the version in `pyproject.toml` and `online_alignment/__init__.py` (a test checks they
+match), add an entry to `CHANGELOG.md`, then push a tag:
+`git tag v0.2.0 && git push --tags`. The publish workflow builds the wheel and creates a
+GitHub release.

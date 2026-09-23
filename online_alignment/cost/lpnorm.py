@@ -1,5 +1,4 @@
 """Lp-norm cost metrics. Optimized numpy and numba."""
-# TODO: write tests for this file
 
 # standard imports
 import warnings
@@ -43,10 +42,16 @@ class LpNormDistance(CostMetric):
         super().__init__(v2v_cost=lp_dist_vec2vec, name=f"l{p}-norm")
         if p <= 0:
             raise ValueError(f"p must be a positive integer, got {p}")
-        if p == 1:
-            warnings.warn("p=1 is equivalent to Manhattan distance, use ManhattanDistance instead")
-        elif p == 2:
-            warnings.warn("p=2 is equivalent to Euclidean distance, use EuclideanDistance instead")
+        # only warn on direct use; EuclideanDistance and ManhattanDistance subclass this
+        if type(self) is LpNormDistance:
+            if p == 1:
+                warnings.warn(
+                    "p=1 is equivalent to Manhattan distance, use ManhattanDistance instead"
+                )
+            elif p == 2:
+                warnings.warn(
+                    "p=2 is equivalent to Euclidean distance, use EuclideanDistance instead"
+                )
         self.p = p
 
     # Matrix-Matrix Lp Norm Distance
