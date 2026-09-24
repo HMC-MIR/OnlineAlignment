@@ -36,7 +36,7 @@ The paper's systems correspond to these calls:
 ## Installation
 
 ```bash
-pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.3.0/online_alignment-0.3.0-py3-none-any.whl
+pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.4.0/online_alignment-0.4.0-py3-none-any.whl
 ```
 
 Or from source, for development:
@@ -84,14 +84,15 @@ for every frame, and `flush()`, then returns the path.
 
 | | SOA | OLTW |
 |---|---|---|
-| `steps`, `weights` | DTW steps as (query, reference) increments. Default `[[1,1],[1,2],[2,1]]`, weights `[1,1,2]` | DTW steps as (reference, query) increments. Default `[[1,0],[0,1],[1,1]]`, weights `[1,1,1]` |
+| `steps`, `weights` | Steps are always `[[1,1],[1,2],[2,1]]` as (query, reference) increments; weights default to `[1,1,2]` | DTW steps as (reference, query) increments. Default `[[1,0],[0,1],[1,1]]`, weights `[1,1,1]` |
 | `cost_metric` | `"cosine"` (default), `"euclidean"`, `"manhattan"`, `"lpnorm"`, a function of two vectors, or a `CostMetric` | same |
 | other | `normalize=True`: pick the best frame by path-length-normalized cost. `monotonic=False`: never move backwards (needs `normalize`). `flexible_start=False`: let the query start at any reference frame, tracking each path's start as in the paper (needs `normalize`) | `window_steps`: the three path transitions (reference-only, query-only, both), any order. `c=500`: band width, or `None` for unbounded. `max_run_count=3`: longest run of one transition |
 
 ### Memory
 
-- **SOA** keeps `max(query_steps) + 1` rows of the cost matrix (plus the same rows of path
-  start frames with `flexible_start=True`): `O(reference_length)`.
+- **SOA** keeps three rows of the cost matrix (plus the same rows of path start frames with
+  `flexible_start=True`): `O(reference_length)`. Each update is one vectorized pass over the
+  reference.
 - **OLTW** with a finite `c` keeps a ring buffer of about `c × c` cells, independent of
   both sequence lengths. With `c=None` every cell up to the current position is computed,
   which reproduces OLTW over the full DTW matrix, at `O(reference_length × query_length)`
@@ -111,11 +112,12 @@ online_alignment/
 └── features/       # feature extractor base classes
 ```
 
-`scripts/time_alignment.py` times the algorithms on random sequences.
+`scripts/time_alignment.py` times the algorithms on random sequences, and
+`scripts/time_soa_update.py` times one SOA update against a long reference on a single core.
 
 ## Releasing
 
 Bump the version in `pyproject.toml` and `online_alignment/__init__.py` (a test checks they
 match), add an entry to `CHANGELOG.md`, then push a tag:
-`git tag v0.3.0 && git push --tags`. The publish workflow builds the wheel and creates a
+`git tag v0.4.0 && git push --tags`. The publish workflow builds the wheel and creates a
 GitHub release.

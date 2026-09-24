@@ -1,8 +1,23 @@
 """Numba kernels for Simple Online Alignment (SOA).
 
-The accumulated cost matrix is stored as a ring buffer of rows: row ``i`` of
-the full matrix lives in ``D[i % D.shape[0]]``. The buffer only needs
-``max(row_steps) + 1`` rows, so memory does not grow with the query length.
+SOA uses the steps (1,1), (1,2), (2,1) as (query, reference) increments, so row
+``i`` of the accumulated cost matrix depends only on rows ``i - 1`` and ``i - 2``.
+The matrix is kept as a ring buffer of three rows: row ``i`` lives in
+``D[i % 3]``. Rows for frames before the first hold ``inf`` (and a start of -1),
+which is exactly "no predecessor", so the first frames need no special case.
+
+Every cell of a new row is independent of the others, so each kernel is a single
+loop over the reference with branch-free selects that compiles to SIMD
+instructions. Normalized costs are written to a separate array, and the position
+is taken with ``np.argmin``, which returns the first minimum.
+
+Exactness: candidates are float32 and path lengths are integers. With a fixed
+start, every candidate into a cell shares the path length, so the cheapest one is
+chosen by raw cost. With a flexible start, candidates v_a / l_a and v_b / l_b are
+compared by cross-multiplying, v_a * l_b < v_b * l_a, which is exact in float64
+(24 + 30 bits < 53). Two different quotients of this form never round to the same
+float64, so these choices, and the argmin over the divided scores, are the same as
+comparing exact normalized costs. Steps are tried in order, so the first wins ties.
 """
 
 # library imports
@@ -11,143 +26,108 @@ from numba import njit
 
 
 @njit(cache=True)
-def soa_row_update(
-    i: int,
+def soa_update_fixed(
     costs: np.ndarray,
     D: np.ndarray,
-    dn: np.ndarray,
-    dm: np.ndarray,
-    dw: np.ndarray,
-    normalize: bool,
-) -> int:
-    """Compute row ``i`` of the accumulated cost matrix and return the best column.
-
-    The caller must reset ``D[i % D.shape[0]]`` to ``inf`` before calling.
+    cur: int,
+    r1: int,
+    r2: int,
+    w0: float,
+    w1: float,
+    w2: float,
+):
+    """Fixed start: compute a row of the accumulated cost matrix.
 
     Args:
-        i: Current query frame index (row of the full matrix).
-        costs: Local cost vector for frame ``i``. Shape (ref_length,)
-        D: Ring buffer of accumulated cost rows. Shape (n_rows, ref_length)
-        dn: Row (query) step sizes. Shape (n_steps,)
-        dm: Column (reference) step sizes. Shape (n_steps,)
-        dw: Step weights. Shape (n_steps,)
-        normalize: If True, choose predecessors and the best column by
-            accumulated cost divided by path length ``i + j + 2``.
-
-    Returns:
-        Reference column index with the lowest (normalized) accumulated cost.
+        costs: Local costs of the current query frame. Shape (ref_length,), float32
+        D: Ring buffer of accumulated cost rows. Shape (3, ref_length), float32
+        cur: Ring row to write (current frame).
+        r1: Ring row of the previous frame.
+        r2: Ring row of the frame before that.
+        w0, w1, w2: Weights of the steps (1,1), (1,2), (2,1), float32.
     """
-    n_rows, ref_length = D.shape
-    n_steps = dn.shape[0]
-    cur = i % n_rows
-
-    # ring-buffer row of each step's predecessor, or -1 if it is before the first row
-    prev_rows = np.empty(n_steps, dtype=np.int64)
-    for k in range(n_steps):
-        prev_i = i - dn[k]
-        prev_rows[k] = prev_i % n_rows if prev_i >= 0 else -1
-
-    best_j = 0
-    best_cost = np.inf
-
-    for j in range(min(costs.shape[0], ref_length)):
-        best_step_cost = np.inf
-        best_step_score = np.inf
-        best_step = -1
-
-        for k in range(n_steps):
-            prev_j = j - dm[k]
-            if prev_rows[k] < 0 or prev_j < 0:
-                continue
-
-            cur_cost = D[prev_rows[k], prev_j] + costs[j] * dw[k]
-            if normalize:
-                score = cur_cost / (i + 1 + j + 1)  # normalize by path length
-            else:
-                score = cur_cost
-
-            if score < best_step_score:
-                best_step_score = score
-                best_step_cost = cur_cost
-                best_step = k
-
-        if best_step != -1:
-            D[cur, j] = best_step_cost
-
-            if best_step_score < best_cost:
-                best_cost = best_step_score
-                best_j = j
-
-    return best_j
+    ref_length = D.shape[1]
+    row, P1, P2 = D[cur], D[r1], D[r2]
+    row[0] = np.inf
+    if ref_length > 1:
+        c = costs[1]
+        a = P1[0] + c * w0
+        b = P2[0] + c * w2
+        row[1] = b if b < a else a
+    for j in range(2, ref_length):
+        c = costs[j]
+        a = P1[j - 1] + c * w0  # (1,1)
+        b = P1[j - 2] + c * w1  # (1,2)
+        a = b if b < a else a
+        b = P2[j - 1] + c * w2  # (2,1)
+        row[j] = b if b < a else a
 
 
 @njit(cache=True)
-def soa_row_update_flexible(
+def soa_scores_fixed(i: int, row: np.ndarray, scores: np.ndarray):
+    """Fixed start: accumulated cost over path length, ``row[j] / (i + j + 2)``."""
+    for j in range(row.shape[0]):
+        scores[j] = row[j] / (i + 1 + j + 1)
+
+
+@njit(cache=True)
+def soa_update_flexible(
     i: int,
     costs: np.ndarray,
     D: np.ndarray,
     S: np.ndarray,
-    dn: np.ndarray,
-    dm: np.ndarray,
-    dw: np.ndarray,
-) -> int:
-    """Compute row ``i`` for a flexible start, where paths may begin at any reference frame.
+    cur: int,
+    r1: int,
+    r2: int,
+    w0: float,
+    w1: float,
+    w2: float,
+    scores: np.ndarray,
+):
+    """Flexible start: compute a row of D and S, and its normalized scores.
 
     ``S`` holds the reference frame where each cell's best path began (-1 if the
-    cell is unreachable). Predecessors and the best column are compared by
-    accumulated cost divided by the path length ``i + j - start``. The caller must
-    reset ``D[i % D.shape[0]]`` to ``inf`` and ``S[i % S.shape[0]]`` to -1 first.
+    cell is unreachable, exactly when D is inf). Candidates are compared by
+    accumulated cost over path length ``i + j - start``.
 
     Args:
-        i: Current query frame index (row of the full matrix).
-        costs: Local cost vector for frame ``i``. Shape (ref_length,)
-        D: Ring buffer of accumulated cost rows. Shape (n_rows, ref_length)
-        S: Ring buffer of path start frames, same shape as ``D``.
-        dn: Row (query) step sizes. Shape (n_steps,)
-        dm: Column (reference) step sizes. Shape (n_steps,)
-        dw: Step weights. Shape (n_steps,)
-
-    Returns:
-        Reference column index with the lowest normalized accumulated cost.
+        i: Current query frame index.
+        costs: Local costs of the current query frame. Shape (ref_length,), float32
+        D: Ring buffer of accumulated cost rows. Shape (3, ref_length), float32
+        S: Ring buffer of path starts, same shape as ``D``, int32.
+        cur, r1, r2: Ring rows of the current, previous and second previous frame.
+        w0, w1, w2: Weights of the steps (1,1), (1,2), (2,1), float32.
+        scores: Output normalized costs. Shape (ref_length,), float64
     """
-    n_rows, ref_length = D.shape
-    n_steps = dn.shape[0]
-    cur = i % n_rows
-
-    # ring-buffer row of each step's predecessor, or -1 if it is before the first row
-    prev_rows = np.empty(n_steps, dtype=np.int64)
-    for k in range(n_steps):
-        prev_i = i - dn[k]
-        prev_rows[k] = prev_i % n_rows if prev_i >= 0 else -1
-
-    best_j = 0
-    best_cost = np.inf
-
-    for j in range(min(costs.shape[0], ref_length)):
-        best_step_score = np.inf
-        best_step = -1
-
-        for k in range(n_steps):
-            prev_j = j - dm[k]
-            if prev_rows[k] < 0 or prev_j < 0:
-                continue
-            start = S[prev_rows[k], prev_j]
-            if start < 0:
-                continue
-
-            score = (D[prev_rows[k], prev_j] + costs[j] * dw[k]) / (i + j - start)
-            if score < best_step_score:
-                best_step_score = score
-                best_step = k
-
-        if best_step != -1:
-            pr = prev_rows[best_step]
-            pj = j - dm[best_step]
-            D[cur, j] = D[pr, pj] + costs[j] * dw[best_step]
-            S[cur, j] = S[pr, pj]
-
-            if best_step_score < best_cost:
-                best_cost = best_step_score
-                best_j = j
-
-    return best_j
+    ref_length = D.shape[1]
+    Dc, Sc = D[cur], S[cur]
+    P1, P2, Q1, Q2 = D[r1], D[r2], S[r1], S[r2]
+    Dc[0] = np.inf
+    Sc[0] = -1
+    scores[0] = np.inf
+    for j in range(1, ref_length):
+        c = costs[j]
+        # (1,1) from (i-1, j-1)
+        best_d = P1[j - 1] + c * w0
+        best_s = Q1[j - 1]
+        best_l = i + j - best_s
+        # (1,2) from (i-1, j-2)
+        if j >= 2:
+            s = Q1[j - 2]
+            v = P1[j - 2] + c * w1
+            length = i + j - s
+            better = np.float64(v) * best_l < np.float64(best_d) * length
+            best_d = v if better else best_d
+            best_s = s if better else best_s
+            best_l = length if better else best_l
+        # (2,1) from (i-2, j-1)
+        s = Q2[j - 1]
+        v = P2[j - 1] + c * w2
+        length = i + j - s
+        better = np.float64(v) * best_l < np.float64(best_d) * length
+        best_d = v if better else best_d
+        best_s = s if better else best_s
+        best_l = length if better else best_l
+        Dc[j] = best_d
+        Sc[j] = best_s
+        scores[j] = best_d / best_l

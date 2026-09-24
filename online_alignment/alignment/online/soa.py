@@ -12,7 +12,7 @@ from ...cost import CostMetric
 
 # local imports
 from .base import OnlineAlignment
-from ..algs import soa_row_update, soa_row_update_flexible
+from ..algs.soa import soa_scores_fixed, soa_update_fixed, soa_update_flexible
 from ..utils import _validate_dtw_steps_weights, _validate_query_frame
 
 
@@ -22,7 +22,8 @@ class SOA(OnlineAlignment):
     For every query frame, SOA extends the accumulated cost matrix by one row
     over the whole reference and reports the reference frame with the lowest
     accumulated cost. It never backtracks, so each estimate is final as soon as
-    it is made. Only the last ``max(row_steps) + 1`` rows of the matrix are kept.
+    it is made. SOA uses the steps (1,1), (1,2), (2,1), so only the last three
+    rows of the matrix are kept.
 
     By default the query starts at the first reference frame. With
     ``flexible_start=True`` it may start anywhere: each cell also records the
@@ -45,9 +46,10 @@ class SOA(OnlineAlignment):
         Args:
             reference_features: Reference audio features.
                 Shape (n_features, n_frames)
-            steps: DTW step pattern. Shape (n_steps, 2) where each row is
-                (query_increment, reference_increment).
-            weights: Weight for each step. Shape (n_steps,)
+            steps: DTW step pattern as (query_increment, reference_increment)
+                rows. Must be ``[[1, 1], [1, 2], [2, 1]]``, the only pattern SOA
+                supports; the argument is kept so the pattern stays explicit.
+            weights: Weight for each of the three steps. Shape (3,)
             cost_metric: Distance metric. Can be a string (``"cosine"``,
                 ``"euclidean"``, …), a callable, or a :class:`CostMetric`
                 instance.
@@ -69,25 +71,29 @@ class SOA(OnlineAlignment):
         steps = np.asarray(steps)
         weights = np.asarray(weights)
         _validate_dtw_steps_weights(steps, weights)
+        if steps.shape != SOA_STEPS.shape or not np.array_equal(steps, SOA_STEPS):
+            raise ValueError(
+                f"SOA supports only the steps {SOA_STEPS.tolist()}, in that order; "
+                f"got {steps.tolist()}"
+            )
         self.steps = steps
         self.weights = weights
         self.normalize = normalize
         self.monotonic = monotonic
         self.flexible_start = flexible_start
 
-        # kernel inputs
-        self._dn = steps[:, 0].astype(np.int64)
-        self._dm = steps[:, 1].astype(np.int64)
-        self._dw = weights.astype(np.float32)
+        # kernel inputs: weights of (1,1), (1,2), (2,1)
+        self._w = tuple(np.float32(w) for w in weights)
 
         # local costs against the fixed reference
         self._costs = self.cost_metric.bind_reference(self.reference_features)
 
-        # ring buffer of accumulated cost rows
-        self._D = np.empty((int(self._dn.max()) + 1, self.reference_length), dtype=np.float32)
+        # ring buffer of the last three accumulated cost rows, and normalized scores
+        self._D = np.empty((3, self.reference_length), dtype=np.float32)
+        self._scores = np.empty(self.reference_length, dtype=np.float64)
 
         # flexible start: ring buffer of the reference frame where each cell's path began
-        self._S = np.empty(self._D.shape, dtype=np.int64) if flexible_start else None
+        self._S = np.empty(self._D.shape, dtype=np.int32) if flexible_start else None
 
         self.reset()
 
@@ -149,20 +155,22 @@ class SOA(OnlineAlignment):
             return self.position
 
         costs = self._costs(query_frame)
-        row = i % self._D.shape[0]
-        self._D[row].fill(np.inf)
-        if self._S is None:
-            best_j = soa_row_update(
-                i, costs, self._D, self._dn, self._dm, self._dw, self.normalize
-            )
+        cur, r1, r2 = i % 3, (i - 1) % 3, (i - 2) % 3
+        if self._S is not None:
+            soa_update_flexible(i, costs, self._D, self._S, cur, r1, r2, *self._w, self._scores)
+            best_j = int(np.argmin(self._scores))
         else:
-            self._S[row].fill(-1)
-            best_j = soa_row_update_flexible(
-                i, costs, self._D, self._S, self._dn, self._dm, self._dw
-            )
+            soa_update_fixed(costs, self._D, cur, r1, r2, *self._w)
+            if self.normalize:
+                soa_scores_fixed(i, self._D[cur], self._scores)
+                best_j = int(np.argmin(self._scores))
+            else:
+                best_j = int(np.argmin(self._D[cur]))
+        return self._append(i, best_j)
 
+    def _append(self, i: int, best_j: int) -> int:
+        """Apply the monotonic constraint and record the estimate for frame ``i``."""
         if self.normalize and self.monotonic:
             best_j = max(best_j, self.position)
-
         self._path.append([i, int(best_j)])
         return int(best_j)

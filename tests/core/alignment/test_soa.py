@@ -451,3 +451,113 @@ def test_flexible_requires_normalize(sequence_pair_a):
     ref, _ = sequence_pair_a
     with pytest.raises(ValueError):
         SOA(ref, flexible_start=True, normalize=False)
+
+
+# ---------------------------------------------------------------------------
+# Tests: vectorized kernels vs. the reference (pre-0.3.1 general) kernels
+# ---------------------------------------------------------------------------
+
+# the default weights and the weights of the tuning sweep
+WEIGHT_SETS = [SOA_WEIGHTS, np.array([2, 3, 3]), np.array([1.5, 3, 3]), np.array([0.75, 3, 3])]
+
+
+def _run_kernels(rng, mode, n_ref, weights, n_frames, cost_fn):
+    """Runs the vectorized and the reference kernels side by side from frame 1 on.
+
+    Asserts identical positions, D rows and starts after every frame.
+    """
+    from online_alignment.alignment.algs.soa import (
+        soa_scores_fixed,
+        soa_update_fixed,
+        soa_update_flexible,
+    )
+    from .soa_reference_kernels import soa_row_update, soa_row_update_flexible
+
+    flexible, normalize = mode == "flexible", mode != "fixed-raw"
+    dn, dm = SOA_STEPS[:, 0].astype(np.int64), SOA_STEPS[:, 1].astype(np.int64)
+    dw = np.asarray(weights).astype(np.float32)
+    w = tuple(dw)
+    D_ref = np.full((3, n_ref), np.inf, dtype=np.float32)
+    S_ref = np.full((3, n_ref), -1, dtype=np.int32)
+    if flexible:
+        D_ref[0] = cost_fn(n_ref)
+        S_ref[0] = np.arange(n_ref)
+    else:
+        D_ref[0, 0] = 0.0
+    D_new, S_new = D_ref.copy(), S_ref.copy()
+    scores = np.empty(n_ref)
+
+    for i in range(1, n_frames):
+        costs = cost_fn(n_ref)
+        cur, r1, r2 = i % 3, (i - 1) % 3, (i - 2) % 3
+        D_ref[cur] = np.inf
+        S_ref[cur] = -1
+        if flexible:
+            j_ref = soa_row_update_flexible(i, costs, D_ref, S_ref, dn, dm, dw)
+            soa_update_flexible(i, costs, D_new, S_new, cur, r1, r2, *w, scores)
+            j_new = int(np.argmin(scores))
+        else:
+            j_ref = soa_row_update(i, costs, D_ref, dn, dm, dw, normalize)
+            soa_update_fixed(costs, D_new, cur, r1, r2, *w)
+            if normalize:
+                soa_scores_fixed(i, D_new[cur], scores)
+                j_new = int(np.argmin(scores))
+            else:
+                j_new = int(np.argmin(D_new[cur]))
+        assert j_new == j_ref, f"frame {i}"
+        np.testing.assert_array_equal(D_new, D_ref)
+        np.testing.assert_array_equal(S_new, S_ref)
+
+
+@pytest.mark.parametrize("weights", WEIGHT_SETS, ids=lambda w: "-".join(map(str, w)))
+@pytest.mark.parametrize("n_ref", [1, 2, 3, 500])
+@pytest.mark.parametrize("mode", ["fixed", "fixed-raw", "flexible"])
+def test_kernels_match_reference(rng, mode, n_ref, weights):
+    """Bit-identical rows, starts and positions to the reference kernels, from frame 1."""
+
+    def costs(n):
+        c = rng.random(n, dtype=np.float32)
+        c[rng.integers(0, n, 20)] = c[0]  # repeated costs
+        return c
+
+    _run_kernels(rng, mode, n_ref, weights, 60, costs)
+
+
+@pytest.mark.parametrize("mode", ["fixed", "flexible"])
+def test_kernels_break_exact_ties_like_reference(rng, mode):
+    """Integer costs make many candidates tie exactly (e.g. 2/2 == 3/3); the first step wins."""
+
+    def costs(n):
+        return rng.integers(0, 2, n).astype(np.float32)
+
+    _run_kernels(rng, mode, 300, SOA_WEIGHTS, 80, costs)
+
+
+@pytest.mark.parametrize("weights", WEIGHT_SETS[1:], ids=lambda w: "-".join(map(str, w)))
+@pytest.mark.parametrize("flexible", [False, True])
+def test_sweep_weights_match_dense_reference(excerpt_pair, sequence_pair_a, weights, flexible):
+    """Whole alignments with the tuning-sweep weights match the dense references."""
+    if flexible:
+        ref, query = excerpt_pair
+        expected = _align_soa_flexible_ref(ref, query, weights=weights)
+    else:
+        ref, query = sequence_pair_a
+        expected = _align_soa_ref(query, ref, weights=weights)
+    path = run_offline_soa(ref, query, weights=weights, flexible_start=flexible)
+    np.testing.assert_array_equal(path, expected)
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        np.array([[1, 1], [1, 2], [2, 1], [1, 0]]),  # extra step
+        np.array([[1, 0], [0, 1], [1, 1]]),  # same-row step, as in the SOA5 sweep config
+        SOA_STEPS[[1, 0, 2]],  # the right steps in another order
+    ],
+    ids=["four-steps", "same-row-step", "reordered"],
+)
+def test_other_step_patterns_are_rejected(sequence_pair_a, steps):
+    """SOA supports only the steps (1,1), (1,2), (2,1), in that order."""
+    ref, _ = sequence_pair_a
+    with pytest.raises(ValueError, match="supports only the steps"):
+        SOA(ref, steps=steps, weights=np.ones(len(steps)))
