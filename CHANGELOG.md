@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `flexible_start` option for `SOA`, `OfflineSOA` and `run_offline_soa`: the query may
+  start at any reference frame. Each cell also records where its path began, and paths are
+  compared by accumulated cost divided by path length, as in Section 2.2 of the paper. The
+  default (`False`) keeps the fixed start at the first reference frame, unchanged.
+
 ## 0.2.1
 
 Faster SOA and OLTW. Paths are bit-identical to 0.2.0. On Mazurka chroma features:
