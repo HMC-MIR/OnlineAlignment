@@ -6,10 +6,14 @@ The matrix is kept as a ring buffer of three rows: row ``i`` lives in
 ``D[i % 3]``. Rows for frames before the first hold ``inf`` (and a start of -1),
 which is exactly "no predecessor", so the first frames need no special case.
 
-Every cell of a new row is independent of the others, so each kernel is a single
-loop over the reference with branch-free selects that compiles to SIMD
-instructions. Normalized costs are written to a separate array, and the position
-is taken with ``np.argmin``, which returns the first minimum.
+Each update is a branch-free loop over the reference that writes the new row, and
+a second loop that writes the path-length-normalized scores; the position is then
+taken with ``np.argmin``, which returns the first minimum. Keeping the scores in
+their own loop matters: writing them in the row loop makes it several times
+slower.
+
+Types are fixed, and each kernel is compiled once for them: costs, rows of D and
+weights are float32, starts are int32, scores are float64.
 
 Exactness: candidates are float32 and path lengths are integers. With a fixed
 start, every candidate into a cell shares the path length, so the cheapest one is
@@ -25,7 +29,8 @@ import numpy as np
 from numba import njit
 
 
-@njit(cache=True)
+@njit("void(float32[::1], float32[:, ::1], int64, int64, int64, float32, float32, float32)",
+      cache=True)
 def soa_update_fixed(
     costs: np.ndarray,
     D: np.ndarray,
@@ -63,14 +68,18 @@ def soa_update_fixed(
         row[j] = b if b < a else a
 
 
-@njit(cache=True)
+@njit("void(int64, float32[::1], float64[::1])", cache=True)
 def soa_scores_fixed(i: int, row: np.ndarray, scores: np.ndarray):
     """Fixed start: accumulated cost over path length, ``row[j] / (i + j + 2)``."""
     for j in range(row.shape[0]):
         scores[j] = row[j] / (i + 1 + j + 1)
 
 
-@njit(cache=True)
+@njit(
+    "void(int64, float32[::1], float32[:, ::1], int32[:, ::1], int64, int64, int64, "
+    "float32, float32, float32)",
+    cache=True,
+)
 def soa_update_flexible(
     i: int,
     costs: np.ndarray,
@@ -82,9 +91,8 @@ def soa_update_flexible(
     w0: float,
     w1: float,
     w2: float,
-    scores: np.ndarray,
 ):
-    """Flexible start: compute a row of D and S, and its normalized scores.
+    """Flexible start: compute a row of D and S.
 
     ``S`` holds the reference frame where each cell's best path began (-1 if the
     cell is unreachable, exactly when D is inf). Candidates are compared by
@@ -97,14 +105,12 @@ def soa_update_flexible(
         S: Ring buffer of path starts, same shape as ``D``, int32.
         cur, r1, r2: Ring rows of the current, previous and second previous frame.
         w0, w1, w2: Weights of the steps (1,1), (1,2), (2,1), float32.
-        scores: Output normalized costs. Shape (ref_length,), float64
     """
     ref_length = D.shape[1]
     Dc, Sc = D[cur], S[cur]
     P1, P2, Q1, Q2 = D[r1], D[r2], S[r1], S[r2]
     Dc[0] = np.inf
     Sc[0] = -1
-    scores[0] = np.inf
     for j in range(1, ref_length):
         c = costs[j]
         # (1,1) from (i-1, j-1)
@@ -130,4 +136,13 @@ def soa_update_flexible(
         best_l = length if better else best_l
         Dc[j] = best_d
         Sc[j] = best_s
-        scores[j] = best_d / best_l
+
+
+@njit("void(int64, float32[::1], int32[::1], float64[::1])", cache=True)
+def soa_scores_flexible(i: int, row: np.ndarray, starts: np.ndarray, scores: np.ndarray):
+    """Flexible start: accumulated cost over path length, ``row[j] / (i + j - starts[j])``.
+
+    Unreachable cells (row inf, start -1) score inf.
+    """
+    for j in range(row.shape[0]):
+        scores[j] = np.float64(row[j]) / (i + j - starts[j])
