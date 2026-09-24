@@ -30,6 +30,7 @@ class OfflineSOA(OfflineAlignment):
         cost_metric: Union[str, Callable, CostMetric] = "cosine",
         normalize: bool = True,
         monotonic: bool = False,
+        flexible_start: bool = False,
     ):
         """Initialize OfflineSOA.
 
@@ -47,6 +48,8 @@ class OfflineSOA(OfflineAlignment):
                 ``False``, use raw accumulated cost.
             monotonic: If ``True``, never move backwards in the reference.
                 Only applied when *normalize* is ``True``.
+            flexible_start: If ``True``, the query may start at any reference
+                frame instead of the first. Requires *normalize*.
         """
         super().__init__(reference_features, cost_metric)
         self._online = SOA(
@@ -56,11 +59,13 @@ class OfflineSOA(OfflineAlignment):
             cost_metric=self.cost_metric,
             normalize=normalize,
             monotonic=monotonic,
+            flexible_start=flexible_start,
         )
         self.steps = self._online.steps
         self.weights = self._online.weights
         self.normalize = normalize
         self.monotonic = monotonic
+        self.flexible_start = flexible_start
 
         # path produced by the most recent align() call
         self.path: Optional[np.ndarray] = None
@@ -88,6 +93,7 @@ def run_offline_soa(
     cost_metric: Union[str, Callable, CostMetric] = "cosine",
     normalize: bool = True,
     monotonic: bool = False,
+    flexible_start: bool = False,
 ) -> np.ndarray:
     """Run offline SOA alignment in a single call.
 
@@ -102,6 +108,8 @@ def run_offline_soa(
             reference frame. Set to ``False`` for raw-cost behaviour.
         monotonic: Enforce monotonic reference progression.
             Only applied when *normalize* is ``True``.
+        flexible_start: Let the query start at any reference frame instead of
+            the first. Requires *normalize*.
 
     Returns:
         Warping path as integer frame indices. Shape (2, n_path_points).
@@ -113,5 +121,6 @@ def run_offline_soa(
         cost_metric=cost_metric,
         normalize=normalize,
         monotonic=monotonic,
+        flexible_start=flexible_start,
     )
     return soa.align(query_features)

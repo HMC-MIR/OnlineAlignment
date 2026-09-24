@@ -358,3 +358,96 @@ def test_offline_rejects_bad_query(sequence_pair_a):
         run_offline_soa(ref, np.zeros((5, 10), dtype=np.float32))
     with pytest.raises(ValueError):
         run_offline_soa(ref, np.zeros(12, dtype=np.float32))
+
+
+# ---------------------------------------------------------------------------
+# Tests: flexible start
+# ---------------------------------------------------------------------------
+
+
+def _align_soa_flexible_ref(ref, query, steps=SOA_STEPS, weights=SOA_WEIGHTS, monotonic=False):
+    """Section 2.2 with a free start, on dense D and S matrices (path[0]=query, path[1]=ref)."""
+    from online_alignment import get_cost_metric
+
+    cost = get_cost_metric("cosine")
+    T, N = query.shape[1], ref.shape[1]
+    D = np.full((T, N), np.inf, dtype=np.float32)
+    S = np.full((T, N), -1, dtype=np.int64)
+    w = weights.astype(np.float32)
+    jj = np.arange(N)
+
+    C = cost.mat2vec(ref, query[:, 0])
+    D[0], S[0] = C, jj
+    path = [[0, int(np.argmin(C))]]
+    for t in range(1, T):
+        if path[-1][1] >= N - 1:
+            break
+        C = cost.mat2vec(ref, query[:, t])
+        best_score = np.full(N, np.inf)
+        for (dt, dj), wk in zip(steps, w):
+            if t - dt < 0:
+                continue
+            pD = np.full(N, np.inf, dtype=np.float32)
+            pS = np.full(N, -1, dtype=np.int64)
+            pD[dj:], pS[dj:] = D[t - dt, :N - dj], S[t - dt, :N - dj]
+            cand = pD + wk * C
+            score = np.where(pS >= 0, cand / np.maximum(t + jj - pS, 1), np.inf)
+            better = score < best_score
+            best_score[better] = score[better]
+            D[t, better], S[t, better] = cand[better], pS[better]
+        best_j = int(np.argmin(best_score))
+        if monotonic:
+            best_j = max(best_j, path[-1][1])
+        path.append([t, best_j])
+    return np.array(path, dtype=np.int64).T
+
+
+@pytest.fixture
+def excerpt_pair(rng):
+    """A noisy excerpt starting at reference frame 70: ref (12, 200), query (12, 90)."""
+    ref = _normalized(rng, 12, 200)
+    query = ref[:, 70:160] + 0.05 * rng.random((12, 90)).astype(np.float32)
+    return ref, query / np.linalg.norm(query, axis=0, keepdims=True)
+
+
+@pytest.mark.parametrize("monotonic", [False, True])
+@pytest.mark.parametrize("pair", ["sequence_pair_a", "sequence_pair_b", "excerpt_pair"])
+def test_flexible_matches_dense_reference(request, pair, monotonic):
+    """flexible_start=True gives exactly the Section 2.2 path computed on dense matrices."""
+    ref, query = request.getfixturevalue(pair)
+    expected = _align_soa_flexible_ref(ref, query, monotonic=monotonic)
+    path = run_offline_soa(ref, query, flexible_start=True, monotonic=monotonic)
+    np.testing.assert_array_equal(path, expected)
+
+
+def test_flexible_finds_excerpt_start(excerpt_pair):
+    """With a flexible start, an excerpt is tracked from where it begins in the reference."""
+    ref, query = excerpt_pair
+    path = run_offline_soa(ref, query, flexible_start=True)
+    np.testing.assert_array_equal(path[1, 5:], 70 + path[0, 5:])
+
+
+def test_flexible_online_matches_offline(excerpt_pair):
+    """Online feed() with a flexible start gives the offline path."""
+    ref, query = excerpt_pair
+    offline = run_offline_soa(ref, query, flexible_start=True)
+    soa = SOA(ref, flexible_start=True)
+    positions = [soa.feed(query[:, i]) for i in range(query.shape[1])]
+    np.testing.assert_array_equal(soa.path, offline)
+    np.testing.assert_array_equal(positions[:offline.shape[1]], offline[1])
+
+
+def test_fixed_start_is_default(sequence_pair_a):
+    """flexible_start=False is the default and keeps the fixed-start path."""
+    ref, query = sequence_pair_a
+    np.testing.assert_array_equal(
+        run_offline_soa(ref, query), run_offline_soa(ref, query, flexible_start=False)
+    )
+    assert SOA(ref)._S is None
+
+
+def test_flexible_requires_normalize(sequence_pair_a):
+    """Raw costs cannot compare paths of different lengths, so this combination is rejected."""
+    ref, _ = sequence_pair_a
+    with pytest.raises(ValueError):
+        SOA(ref, flexible_start=True, normalize=False)
