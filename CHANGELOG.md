@@ -5,14 +5,14 @@
 ### Performance
 Faster SOA updates for three-step patterns (the default); paths are bit-identical.
 Per update against a 60-minute reference (N = 155k frames) on one 2.4 GHz Xeon core,
-once the whole reference is reachable:
+once the reachable part of the row is largest:
 - Fixed start: DP update 1.79 ms → 0.76 ms.
 - Flexible start: DP update 2.85 ms → 2.03 ms (path starts are now stored as int32).
 - The cost row is unchanged at about 0.87 ms.
 
 ### Added
 - `scripts/time_soa_update.py`, which times the cost row and the DP update separately on
-  one core, after feeding enough frames that the whole reference is reachable.
+  one core, once the reachable part of the row is largest.
 
 ## 0.3.0
 

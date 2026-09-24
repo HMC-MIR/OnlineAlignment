@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Time one SOA update against a long reference, split into cost row and DP update.
 
-Runs on a single CPU core with one BLAS and Numba thread. Before timing, the query
-is fed until every reference frame is reachable: with a fixed start, query frame t
-can only reach reference frames up to 2t, so early frames leave most of the row
-at infinity and are much cheaper than a real performance in progress. A flexible
-start reaches the whole reference from the first frame.
+Runs on a single CPU core with one BLAS and Numba thread. With a fixed start and
+the default steps, query frame t can only reach reference frames t/2 to 2t, so
+early frames leave most of the row at infinity and are much cheaper than a
+performance in progress. Timing therefore starts at t = N/2, where the reachable
+part of the row is largest (three quarters of the reference). A flexible start
+reaches the whole reference from the first frame.
 
 By default the features are random nonnegative 12-dimensional vectors,
 L2-normalized like chroma. Real features time a little faster (their costs make
@@ -57,7 +58,7 @@ def real_features(paths, n_frames: int) -> Tuple[np.ndarray, np.ndarray]:
 def time_updates(
     reference: np.ndarray, query: np.ndarray, flexible: bool, n_frames: int
 ) -> Tuple[float, float, float]:
-    """Median (cost row, DP update, whole feed) in ms over n_frames, once the row is reachable."""
+    """Median (cost row, DP update, whole feed) in ms over n_frames, from query frame N/2 on."""
     soa = SOA(reference, flexible_start=flexible)
     n_warmup = 2 if flexible else reference.shape[1] // 2 + 2
 
