@@ -363,3 +363,94 @@ def soa_row_update_flexible3(
             best_len = best_l
             best_j = j
     return best_j
+
+
+# ---------------------------------------------------------------------------
+# Default steps (1,1), (1,2), (2,1) with weights 1, 1, 2, vectorized
+# ---------------------------------------------------------------------------
+#
+# The steps and weights are compile-time constants, so there are no multiplies
+# (c * 1 == c and c * 2 == c + c exactly in float32). The row minimum and the
+# path-length-normalized scores are separate single-type loops that compile to
+# SIMD instructions, and the position is taken with np.argmin, which returns the
+# first minimum, like the running strict < of the general kernels. Results are
+# bit-identical to those kernels. Every row index must be valid (i >= 2).
+
+
+@njit(cache=True)
+def soa_min_default(costs: np.ndarray, D: np.ndarray, cur_row: int, r1: int, r2: int):
+    """Fixed start: write row ``cur_row`` of ``D`` from rows ``r1`` (frame i-1) and ``r2`` (i-2)."""
+    ref_length = D.shape[1]
+    cur, P1, P2 = D[cur_row], D[r1], D[r2]
+    cur[0] = np.inf
+    if ref_length > 1:
+        c = costs[1]
+        a = P1[0] + c
+        b = P2[0] + (c + c)
+        cur[1] = b if b < a else a
+    for j in range(2, ref_length):
+        c = costs[j]
+        a = P1[j - 1] + c
+        b = P1[j - 2] + c
+        a = b if b < a else a
+        b = P2[j - 1] + (c + c)
+        cur[j] = b if b < a else a
+
+
+@njit(cache=True)
+def soa_scores_fixed(i: int, row: np.ndarray, scores: np.ndarray):
+    """Fixed start: accumulated cost over path length, ``row[j] / (i + j + 2)``."""
+    for j in range(row.shape[0]):
+        scores[j] = row[j] / (i + 1 + j + 1)
+
+
+@njit(cache=True)
+def soa_update_flexible_default(
+    i: int,
+    costs: np.ndarray,
+    D: np.ndarray,
+    S: np.ndarray,
+    cur_row: int,
+    r1: int,
+    r2: int,
+    scores: np.ndarray,
+):
+    """Flexible start: write row ``cur_row`` of ``D`` and ``S``, and the normalized scores.
+
+    Candidates are compared by exact cross-multiplication with branch-free
+    selects, in step order so the first step wins ties. An unreachable
+    predecessor has D = inf exactly when S = -1, so it never wins. The scores
+    ``D / (i + j - S)`` order columns exactly as the cross-multiplied comparison.
+    """
+    ref_length = D.shape[1]
+    Dc, Sc = D[cur_row], S[cur_row]
+    P1, P2, Q1, Q2 = D[r1], D[r2], S[r1], S[r2]
+    Dc[0] = np.inf
+    Sc[0] = -1
+    scores[0] = np.inf
+    for j in range(1, ref_length):
+        c = costs[j]
+        # (1,1) from (i-1, j-1)
+        best_d = P1[j - 1] + c
+        best_s = Q1[j - 1]
+        best_l = i + j - best_s
+        # (1,2) from (i-1, j-2)
+        if j >= 2:
+            s = Q1[j - 2]
+            v = P1[j - 2] + c
+            length = i + j - s
+            better = np.float64(v) * best_l < np.float64(best_d) * length
+            best_d = v if better else best_d
+            best_s = s if better else best_s
+            best_l = length if better else best_l
+        # (2,1) from (i-2, j-1)
+        s = Q2[j - 1]
+        v = P2[j - 1] + (c + c)
+        length = i + j - s
+        better = np.float64(v) * best_l < np.float64(best_d) * length
+        best_d = v if better else best_d
+        best_s = s if better else best_s
+        best_l = length if better else best_l
+        Dc[j] = best_d
+        Sc[j] = best_s
+        scores[j] = best_d / best_l

@@ -13,10 +13,13 @@ from ...cost import CostMetric
 # local imports
 from .base import OnlineAlignment
 from ..algs.soa import (
+    soa_min_default,
     soa_row_update,
     soa_row_update3,
     soa_row_update_flexible,
     soa_row_update_flexible3,
+    soa_scores_fixed,
+    soa_update_flexible_default,
 )
 from ..utils import _validate_dtw_steps_weights, _validate_query_frame
 
@@ -94,6 +97,16 @@ class SOA(OnlineAlignment):
         # ring-buffer row of each step's predecessor, for the three-step kernels
         self._rows = np.empty(len(self._dn), dtype=np.int64)
 
+        # the default steps and weights, in order, have vectorized kernels
+        self._default_steps = (
+            steps.shape == SOA_STEPS.shape
+            and np.array_equal(steps, SOA_STEPS)
+            and np.array_equal(weights, SOA_WEIGHTS)
+        )
+        self._scores = (
+            np.empty(self.reference_length, dtype=np.float64) if self._default_steps else None
+        )
+
         # flexible start: ring buffer of the reference frame where each cell's path began
         self._S = np.empty(self._D.shape, dtype=np.int32) if flexible_start else None
 
@@ -159,7 +172,24 @@ class SOA(OnlineAlignment):
         costs = self._costs(query_frame)
         n_rows = self._D.shape[0]
 
-        # three steps (the default): unrolled kernels that overwrite the whole row
+        # default steps and weights: vectorized kernels, once frames i-1 and i-2 exist
+        if self._default_steps and i >= 2:
+            cur, r1, r2 = i % n_rows, (i - 1) % n_rows, (i - 2) % n_rows
+            if self._S is not None:
+                soa_update_flexible_default(
+                    i, costs, self._D, self._S, cur, r1, r2, self._scores
+                )
+                best_j = int(np.argmin(self._scores))
+            else:
+                soa_min_default(costs, self._D, cur, r1, r2)
+                if self.normalize:
+                    soa_scores_fixed(i, self._D[cur], self._scores)
+                    best_j = int(np.argmin(self._scores))
+                else:
+                    best_j = int(np.argmin(self._D[cur]))
+            return self._append(i, best_j)
+
+        # other three-step patterns: unrolled kernels that overwrite the whole row
         if len(self._dn) == 3:
             for k in range(3):
                 prev_i = i - self._dn[k]

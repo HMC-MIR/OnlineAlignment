@@ -520,3 +520,150 @@ def test_general_flexible_four_steps_matches_reference(excerpt_pair):
     expected = _align_soa_flexible_ref(ref, query, steps=FOUR_STEPS, weights=FOUR_WEIGHTS)
     path = run_offline_soa(ref, query, steps=FOUR_STEPS, weights=FOUR_WEIGHTS, flexible_start=True)
     np.testing.assert_array_equal(path, expected)
+
+
+# ---------------------------------------------------------------------------
+# Tests: vectorized kernels for the default steps and weights
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("n_ref", [1, 2, 3, 500])
+@pytest.mark.parametrize("mode", ["fixed", "fixed-raw", "flexible"])
+def test_default_kernels_match_general(rng, n_ref, mode):
+    """The vectorized default-step kernels give bit-identical rows, starts and positions."""
+    from online_alignment.alignment.algs.soa import (
+        soa_min_default,
+        soa_row_update,
+        soa_row_update_flexible,
+        soa_scores_fixed,
+        soa_update_flexible_default,
+    )
+
+    flexible, normalize = mode == "flexible", mode != "fixed-raw"
+    n_rows = 3
+    dn, dm = SOA_STEPS[:, 0].astype(np.int64), SOA_STEPS[:, 1].astype(np.int64)
+    dw = SOA_WEIGHTS.astype(np.float32)
+    D_gen = np.full((n_rows, n_ref), np.inf, dtype=np.float32)
+    S_gen = np.full((n_rows, n_ref), -1, dtype=np.int32)
+    if flexible:
+        D_gen[0] = rng.random(n_ref, dtype=np.float32)
+        S_gen[0] = np.arange(n_ref)
+    else:
+        D_gen[0, 0] = 0.0
+    scores = np.empty(n_ref)
+
+    # frame 1 has no frame i-2, so both paths use the general kernel for it
+    costs = rng.random(n_ref, dtype=np.float32)
+    D_gen[1] = np.inf
+    if flexible:
+        S_gen[1] = -1
+        soa_row_update_flexible(1, costs, D_gen, S_gen, dn, dm, dw)
+    else:
+        soa_row_update(1, costs, D_gen, dn, dm, dw, normalize)
+    D_fast, S_fast = D_gen.copy(), S_gen.copy()
+
+    for i in range(2, 60):
+        costs = rng.random(n_ref, dtype=np.float32)
+        costs[rng.integers(0, n_ref, 20)] = costs[0]  # repeated costs exercise ties
+        cur, r1, r2 = i % n_rows, (i - 1) % n_rows, (i - 2) % n_rows
+        D_gen[cur] = np.inf
+        S_gen[cur] = -1
+        if flexible:
+            j_gen = soa_row_update_flexible(i, costs, D_gen, S_gen, dn, dm, dw)
+            soa_update_flexible_default(i, costs, D_fast, S_fast, cur, r1, r2, scores)
+            j_fast = int(np.argmin(scores))
+        else:
+            j_gen = soa_row_update(i, costs, D_gen, dn, dm, dw, normalize)
+            soa_min_default(costs, D_fast, cur, r1, r2)
+            if normalize:
+                soa_scores_fixed(i, D_fast[cur], scores)
+                j_fast = int(np.argmin(scores))
+            else:
+                j_fast = int(np.argmin(D_fast[cur]))
+        assert j_fast == j_gen
+        np.testing.assert_array_equal(D_fast, D_gen)
+        np.testing.assert_array_equal(S_fast, S_gen)
+
+
+def test_default_path_is_used_only_for_default_steps(sequence_pair_a):
+    """The vectorized path needs the default steps and weights, in order."""
+    ref, _ = sequence_pair_a
+    assert SOA(ref)._default_steps
+    assert not SOA(ref, steps=SOA_STEPS[[1, 0, 2]])._default_steps
+    assert not SOA(ref, weights=np.array([1, 1, 3]))._default_steps
+
+
+@pytest.mark.parametrize("flexible", [False, True])
+def test_reordered_default_steps_match_reference(excerpt_pair, flexible):
+    """Reordered steps take the unrolled path; order decides flexible-start ties."""
+    ref, query = excerpt_pair
+    steps = SOA_STEPS[[1, 0, 2]]
+    weights = SOA_WEIGHTS[[1, 0, 2]]
+    if flexible:
+        expected = _align_soa_flexible_ref(ref, query, steps=steps, weights=weights)
+    else:
+        expected = _align_soa_ref(query, ref, steps=steps, weights=weights)
+    path = run_offline_soa(ref, query, steps=steps, weights=weights, flexible_start=flexible)
+    np.testing.assert_array_equal(path, expected)
+
+
+@pytest.mark.parametrize("mode", ["fixed", "flexible"])
+def test_default_kernels_break_exact_ties_like_general(rng, mode):
+    """Integer-valued costs make many candidates tie exactly (e.g. 2/2 == 3/3); the first step wins.
+
+    Checks the vectorized default-step kernels and the unrolled three-step kernels
+    against the general ones.
+    """
+    from online_alignment.alignment.algs.soa import (
+        soa_min_default,
+        soa_row_update,
+        soa_row_update3,
+        soa_row_update_flexible,
+        soa_row_update_flexible3,
+        soa_scores_fixed,
+        soa_update_flexible_default,
+    )
+
+    flexible = mode == "flexible"
+    n_ref, n_rows = 300, 3
+    dn, dm = SOA_STEPS[:, 0].astype(np.int64), SOA_STEPS[:, 1].astype(np.int64)
+    dw = SOA_WEIGHTS.astype(np.float32)
+    D_gen = np.full((n_rows, n_ref), np.inf, dtype=np.float32)
+    S_gen = np.full((n_rows, n_ref), -1, dtype=np.int32)
+    if flexible:
+        D_gen[0] = rng.integers(0, 3, n_ref).astype(np.float32)
+        S_gen[0] = np.arange(n_ref)
+    else:
+        D_gen[0, 0] = 0.0
+    costs = rng.integers(0, 2, n_ref).astype(np.float32)
+    D_gen[1] = np.inf
+    if flexible:
+        soa_row_update_flexible(1, costs, D_gen, S_gen, dn, dm, dw)
+    else:
+        soa_row_update(1, costs, D_gen, dn, dm, dw, True)
+    D_fast, S_fast = D_gen.copy(), S_gen.copy()
+    D_unr, S_unr = D_gen.copy(), S_gen.copy()
+    scores = np.empty(n_ref)
+    rows = np.empty(3, dtype=np.int64)
+
+    for i in range(2, 80):
+        costs = rng.integers(0, 2, n_ref).astype(np.float32)
+        for k in range(3):
+            rows[k] = (i - dn[k]) % n_rows
+        cur, r1, r2 = i % n_rows, (i - 1) % n_rows, (i - 2) % n_rows
+        D_gen[cur] = np.inf
+        S_gen[cur] = -1
+        if flexible:
+            j_gen = soa_row_update_flexible(i, costs, D_gen, S_gen, dn, dm, dw)
+            soa_update_flexible_default(i, costs, D_fast, S_fast, cur, r1, r2, scores)
+            j_unr = soa_row_update_flexible3(i, costs, D_unr, S_unr, rows, dm, dw)
+        else:
+            j_gen = soa_row_update(i, costs, D_gen, dn, dm, dw, True)
+            soa_min_default(costs, D_fast, cur, r1, r2)
+            soa_scores_fixed(i, D_fast[cur], scores)
+            j_unr = soa_row_update3(i, costs, D_unr, rows, dm, dw, True)
+        assert int(np.argmin(scores)) == j_gen
+        assert j_unr == j_gen
+        for D, S in ((D_fast, S_fast), (D_unr, S_unr)):
+            np.testing.assert_array_equal(D, D_gen)
+            np.testing.assert_array_equal(S, S_gen)
