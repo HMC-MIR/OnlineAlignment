@@ -1,17 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+SOA now has a single implementation: one vectorized (SIMD) pass over the reference per
+query frame, for both fixed and flexible start. Paths are bit-identical to 0.3.0 for the
+supported steps.
+
+### Changed
+- **SOA supports only the steps (1,1), (1,2), (2,1)**, in that order, as in the paper.
+  `steps` is still accepted but must be that pattern; others raise `ValueError`. This
+  includes patterns with a same-row step such as (0,1), which cannot be vectorized.
+  Weights stay configurable (default 1, 1, 2).
+- Path starts for `flexible_start=True` are stored as int32.
 
 ### Performance
-Faster SOA updates; paths are bit-identical. Per update against a 60-minute reference
-(N = 155k frames) on one 2.4 GHz Xeon core, once the reachable part of the row is largest:
-- Fixed start: DP update 1.80 ms → 0.59 ms.
-- Flexible start: DP update 2.87 ms → 1.27 ms.
-- The cost row is unchanged at about 0.88 ms.
-
-With the default steps and weights, the DP update uses vectorized (SIMD) kernels with the
-steps and weights as compile-time constants. Other three-step patterns use unrolled kernels,
-and any other pattern the general ones. Path starts are now stored as int32.
+Per update against a 60-minute reference (N = 155k frames) on one 2.4 GHz Xeon core,
+once the reachable part of the row is largest:
+- Fixed start: DP update 1.80 ms → 0.63 ms.
+- Flexible start: DP update 2.87 ms → 1.35 ms.
+- The cost row is unchanged at about 0.85 ms.
 
 ### Added
 - `scripts/time_soa_update.py`, which times the cost row and the DP update separately on

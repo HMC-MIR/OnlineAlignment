@@ -37,9 +37,10 @@ class OfflineSOA(OfflineAlignment):
         Args:
             reference_features: Reference audio features.
                 Shape (n_features, n_frames)
-            steps: DTW step pattern. Shape (n_steps, 2) where each row is
-                (query_increment, reference_increment).
-            weights: Weight for each step. Shape (n_steps,)
+            steps: DTW step pattern as (query_increment, reference_increment)
+                rows. Must be ``[[1, 1], [1, 2], [2, 1]]``, the only pattern SOA
+                supports.
+            weights: Weight for each of the three steps. Shape (3,)
             cost_metric: Distance metric. Can be a string (``"cosine"``,
                 ``"euclidean"``, …), a callable, or a :class:`CostMetric`
                 instance.
@@ -100,8 +101,8 @@ def run_offline_soa(
     Args:
         reference_features: Reference features. Shape (n_features, n_frames)
         query_features: Query features. Shape (n_features, n_frames)
-        steps: DTW step pattern. Shape (n_steps, 2).
-        weights: Step weights. Shape (n_steps,).
+        steps: DTW step pattern; must be ``[[1, 1], [1, 2], [2, 1]]``.
+        weights: Weights of the three steps. Shape (3,).
         cost_metric: Distance metric (string name, callable, or
             :class:`CostMetric` instance).
         normalize: Use path-length-normalized cost when tracking the best
