@@ -109,7 +109,7 @@ online_alignment/
 │   ├── online/     # SOA, OLTW
 │   └── offline/    # OfflineSOA, OfflineOLTW, run_offline_soa, run_offline_oltw
 ├── cost/           # cost metrics and the get_cost_metric registry
-└── features/       # feature extractor base classes
+└── features/       # feature-extractor interfaces only; compute features yourself (e.g. chroma)
 ```
 
 `scripts/time_alignment.py` times the algorithms on random sequences, and
@@ -121,3 +121,7 @@ Bump the version in `pyproject.toml` and `online_alignment/__init__.py` (a test 
 match), add an entry to `CHANGELOG.md`, then push a tag:
 `git tag v0.4.1 && git push --tags`. The publish workflow builds the wheel and creates a
 GitHub release.
+
+## License
+
+MIT; see [LICENSE](LICENSE).
