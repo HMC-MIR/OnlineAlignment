@@ -12,7 +12,12 @@ from ...cost import CostMetric
 
 # local imports
 from .base import OnlineAlignment
-from ..algs.soa import soa_scores_fixed, soa_update_fixed, soa_update_flexible
+from ..algs.soa import (
+    soa_scores_fixed,
+    soa_scores_flexible,
+    soa_update_fixed,
+    soa_update_flexible,
+)
 from ..utils import _validate_dtw_steps_weights, _validate_query_frame
 
 
@@ -45,7 +50,8 @@ class SOA(OnlineAlignment):
 
         Args:
             reference_features: Reference audio features.
-                Shape (n_features, n_frames)
+                Shape (n_features, n_frames). Converted to float32, as are query
+                frames and local costs.
             steps: DTW step pattern as (query_increment, reference_increment)
                 rows. Must be ``[[1, 1], [1, 2], [2, 1]]``, the only pattern SOA
                 supports; the argument is kept so the pattern stays explicit.
@@ -61,6 +67,10 @@ class SOA(OnlineAlignment):
             flexible_start: If ``True``, the query may start at any reference
                 frame instead of the first. Requires *normalize*.
         """
+        # features are float32 throughout, so there is one compiled version of each kernel.
+        # The memory layout is kept: the cost row's BLAS call rounds differently for C- and
+        # Fortran-ordered references, so copying the layout would change results.
+        reference_features = np.asarray(reference_features).astype(np.float32, copy=False)
         super().__init__(reference_features, cost_metric)
         if flexible_start and not normalize:
             raise ValueError(
@@ -86,7 +96,7 @@ class SOA(OnlineAlignment):
         self._w = tuple(np.float32(w) for w in weights)
 
         # local costs against the fixed reference
-        self._costs = self.cost_metric.bind_reference(self.reference_features)
+        self._bound_costs = self.cost_metric.bind_reference(self.reference_features)
 
         # ring buffer of the last three accumulated cost rows, and normalized scores
         self._D = np.empty((3, self.reference_length), dtype=np.float32)
@@ -157,7 +167,8 @@ class SOA(OnlineAlignment):
         costs = self._costs(query_frame)
         cur, r1, r2 = i % 3, (i - 1) % 3, (i - 2) % 3
         if self._S is not None:
-            soa_update_flexible(i, costs, self._D, self._S, cur, r1, r2, *self._w, self._scores)
+            soa_update_flexible(i, costs, self._D, self._S, cur, r1, r2, *self._w)
+            soa_scores_flexible(i, self._D[cur], self._S[cur], self._scores)
             best_j = int(np.argmin(self._scores))
         else:
             soa_update_fixed(costs, self._D, cur, r1, r2, *self._w)
@@ -167,6 +178,11 @@ class SOA(OnlineAlignment):
             else:
                 best_j = int(np.argmin(self._D[cur]))
         return self._append(i, best_j)
+
+    def _costs(self, query_frame: np.ndarray) -> np.ndarray:
+        """Local costs of one query frame against the reference, as contiguous float32."""
+        query_frame = np.asarray(query_frame, dtype=np.float32)
+        return np.ascontiguousarray(self._bound_costs(query_frame), dtype=np.float32)
 
     def _append(self, i: int, best_j: int) -> int:
         """Apply the monotonic constraint and record the estimate for frame ``i``."""

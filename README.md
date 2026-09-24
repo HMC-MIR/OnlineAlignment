@@ -36,7 +36,7 @@ The paper's systems correspond to these calls:
 ## Installation
 
 ```bash
-pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.4.0/online_alignment-0.4.0-py3-none-any.whl
+pip install https://github.com/HMC-MIR/OnlineAlignment/releases/download/v0.4.1/online_alignment-0.4.1-py3-none-any.whl
 ```
 
 Or from source, for development:
@@ -91,7 +91,7 @@ for every frame, and `flush()`, then returns the path.
 ### Memory
 
 - **SOA** keeps three rows of the cost matrix (plus the same rows of path start frames with
-  `flexible_start=True`): `O(reference_length)`. Each update is one vectorized pass over the
+  `flexible_start=True`): `O(reference_length)`. Each update is one branch-free pass over the
   reference.
 - **OLTW** with a finite `c` keeps a ring buffer of about `c × c` cells, independent of
   both sequence lengths. With `c=None` every cell up to the current position is computed,
@@ -119,5 +119,5 @@ online_alignment/
 
 Bump the version in `pyproject.toml` and `online_alignment/__init__.py` (a test checks they
 match), add an entry to `CHANGELOG.md`, then push a tag:
-`git tag v0.4.0 && git push --tags`. The publish workflow builds the wheel and creates a
+`git tag v0.4.1 && git push --tags`. The publish workflow builds the wheel and creates a
 GitHub release.

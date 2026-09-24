@@ -468,6 +468,7 @@ def _run_kernels(rng, mode, n_ref, weights, n_frames, cost_fn):
     """
     from online_alignment.alignment.algs.soa import (
         soa_scores_fixed,
+        soa_scores_flexible,
         soa_update_fixed,
         soa_update_flexible,
     )
@@ -494,7 +495,8 @@ def _run_kernels(rng, mode, n_ref, weights, n_frames, cost_fn):
         S_ref[cur] = -1
         if flexible:
             j_ref = soa_row_update_flexible(i, costs, D_ref, S_ref, dn, dm, dw)
-            soa_update_flexible(i, costs, D_new, S_new, cur, r1, r2, *w, scores)
+            soa_update_flexible(i, costs, D_new, S_new, cur, r1, r2, *w)
+            soa_scores_flexible(i, D_new[cur], S_new[cur], scores)
             j_new = int(np.argmin(scores))
         else:
             j_ref = soa_row_update(i, costs, D_ref, dn, dm, dw, normalize)
@@ -561,3 +563,36 @@ def test_other_step_patterns_are_rejected(sequence_pair_a, steps):
     ref, _ = sequence_pair_a
     with pytest.raises(ValueError, match="supports only the steps"):
         SOA(ref, steps=steps, weights=np.ones(len(steps)))
+
+
+# ---------------------------------------------------------------------------
+# Tests: fixed types
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("flexible", [False, True])
+def test_float64_features_are_aligned_as_float32(sequence_pair_a, flexible):
+    """Features are converted to float32, so float64 input gives the float32 result."""
+    ref, query = sequence_pair_a
+    as32 = run_offline_soa(ref, query, flexible_start=flexible)
+    as64 = run_offline_soa(
+        ref.astype(np.float64), query.astype(np.float64), flexible_start=flexible
+    )
+    np.testing.assert_array_equal(as64, as32)
+
+
+def test_kernels_reject_other_types():
+    """Each kernel is compiled for one set of types; others raise instead of recompiling."""
+    from online_alignment.alignment.algs.soa import soa_update_fixed
+
+    D64 = np.full((3, 10), np.inf)
+    with pytest.raises(TypeError):
+        soa_update_fixed(np.zeros(10), D64, 2, 1, 0, 1.0, 1.0, 2.0)
+    assert len(soa_update_fixed.signatures) == 1
+
+
+def test_reference_layout_is_kept(sequence_pair_a):
+    """Fortran-ordered float32 features are used as given, not copied to C order."""
+    ref, _ = sequence_pair_a
+    ref_f = np.asfortranarray(ref)
+    assert SOA(ref_f).reference_features is ref_f

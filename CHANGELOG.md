@@ -1,15 +1,39 @@
 # Changelog
 
+## 0.4.1
+
+Faster flexible start; paths are bit-identical to 0.4.0 (and to 0.3.0).
+
+### Performance
+Per update against a 60-minute reference (N = 155k frames) on one 2.4 GHz Xeon core, with
+numba 0.63 and real chroma features:
+- Flexible start: DP update 1.46 ms → 0.65 ms. The scores are now computed in their own
+  loop, as they already were with a fixed start; writing them in the row loop made it
+  over twice as slow.
+- Fixed start is unchanged (DP update 0.64 ms, cost row about 0.6 ms).
+
+### Changed
+- `SOA` converts features to float32 (keeping their memory layout), and the kernels have
+  explicit signatures, so each is compiled once: float32 costs and rows, int32 starts,
+  float64 scores. Float64 features now give the same paths as the same features in
+  float32; previously their float64 costs were used.
+
+### Fixed
+- The 0.4.0 notes and docs described the SOA kernels as SIMD-vectorized. They compile to
+  scalar, branch-free code; only the score and argmin passes use SIMD. Vectorized versions
+  with separate row arrays, row blocking and interleaved (cost, start) storage were all
+  slower on the test machine, because the update is limited by memory traffic.
+
 ## 0.4.0
 
-SOA now has a single implementation: one vectorized (SIMD) pass over the reference per
+SOA now has a single implementation: one branch-free pass over the reference per
 query frame, for both fixed and flexible start. Paths are bit-identical to 0.3.0 for the
 supported steps.
 
 ### Changed
 - **SOA supports only the steps (1,1), (1,2), (2,1)**, in that order, as in the paper.
   `steps` is still accepted but must be that pattern; others raise `ValueError`. This
-  includes patterns with a same-row step such as (0,1), which cannot be vectorized.
+  includes patterns with a same-row step such as (0,1), which chain cells within a row.
   Weights stay configurable (default 1, 1, 2).
 - Path starts for `flexible_start=True` are stored as int32.
 
