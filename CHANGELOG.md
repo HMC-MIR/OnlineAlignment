@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 ### Added
 - `flexible_start` option for `SOA`, `OfflineSOA` and `run_offline_soa`: the query may
