@@ -451,3 +451,72 @@ def test_flexible_requires_normalize(sequence_pair_a):
     ref, _ = sequence_pair_a
     with pytest.raises(ValueError):
         SOA(ref, flexible_start=True, normalize=False)
+
+
+# ---------------------------------------------------------------------------
+# Tests: unrolled three-step kernels
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("flexible", [False, True])
+@pytest.mark.parametrize("normalize", [True, False])
+def test_unrolled_kernels_match_general(rng, flexible, normalize):
+    """The three-step kernels give bit-identical rows, starts and positions to the general ones."""
+    from online_alignment.alignment.algs.soa import (
+        soa_row_update,
+        soa_row_update3,
+        soa_row_update_flexible,
+        soa_row_update_flexible3,
+    )
+
+    if flexible and not normalize:
+        pytest.skip("flexible start always normalizes")
+    N, n_rows = 500, 3
+    dn, dm = SOA_STEPS[:, 0].astype(np.int64), SOA_STEPS[:, 1].astype(np.int64)
+    dw = SOA_WEIGHTS.astype(np.float32)
+    D_gen = np.full((n_rows, N), np.inf, dtype=np.float32)
+    S_gen = np.full((n_rows, N), -1, dtype=np.int64)
+    if flexible:
+        D_gen[0] = rng.random(N, dtype=np.float32)
+        S_gen[0] = np.arange(N)
+    else:
+        D_gen[0, 0] = 0.0
+    D_fast, S_fast = D_gen.copy(), S_gen.copy()
+    rows = np.empty(3, dtype=np.int64)
+
+    for i in range(1, 60):
+        costs = rng.random(N, dtype=np.float32)
+        costs[rng.integers(0, N, 20)] = costs[0]  # repeated costs exercise ties
+        for k in range(3):
+            rows[k] = (i - dn[k]) % n_rows if i - dn[k] >= 0 else -1
+        D_gen[i % n_rows] = np.inf
+        S_gen[i % n_rows] = -1
+        if flexible:
+            j_gen = soa_row_update_flexible(i, costs, D_gen, S_gen, dn, dm, dw)
+            j_fast = soa_row_update_flexible3(i, costs, D_fast, S_fast, rows, dm, dw)
+        else:
+            j_gen = soa_row_update(i, costs, D_gen, dn, dm, dw, normalize)
+            j_fast = soa_row_update3(i, costs, D_fast, rows, dm, dw, normalize)
+        assert j_fast == j_gen
+        np.testing.assert_array_equal(D_fast, D_gen)
+        np.testing.assert_array_equal(S_fast, S_gen)
+
+
+FOUR_STEPS = np.array([[1, 1], [1, 2], [2, 1], [1, 0]])
+FOUR_WEIGHTS = np.array([1, 1, 2, 3])
+
+
+def test_general_kernel_four_steps_matches_reference(sequence_pair_a):
+    """Step patterns other than three steps use the general kernel and still match."""
+    ref, query = sequence_pair_a
+    expected = _align_soa_ref(query, ref, steps=FOUR_STEPS, weights=FOUR_WEIGHTS)
+    path = run_offline_soa(ref, query, steps=FOUR_STEPS, weights=FOUR_WEIGHTS)
+    np.testing.assert_array_equal(path, expected)
+
+
+def test_general_flexible_four_steps_matches_reference(excerpt_pair):
+    """Flexible start with four steps matches the dense Section 2.2 reference."""
+    ref, query = excerpt_pair
+    expected = _align_soa_flexible_ref(ref, query, steps=FOUR_STEPS, weights=FOUR_WEIGHTS)
+    path = run_offline_soa(ref, query, steps=FOUR_STEPS, weights=FOUR_WEIGHTS, flexible_start=True)
+    np.testing.assert_array_equal(path, expected)

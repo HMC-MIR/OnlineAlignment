@@ -12,7 +12,12 @@ from ...cost import CostMetric
 
 # local imports
 from .base import OnlineAlignment
-from ..algs import soa_row_update, soa_row_update_flexible
+from ..algs.soa import (
+    soa_row_update,
+    soa_row_update3,
+    soa_row_update_flexible,
+    soa_row_update_flexible3,
+)
 from ..utils import _validate_dtw_steps_weights, _validate_query_frame
 
 
@@ -86,8 +91,11 @@ class SOA(OnlineAlignment):
         # ring buffer of accumulated cost rows
         self._D = np.empty((int(self._dn.max()) + 1, self.reference_length), dtype=np.float32)
 
+        # ring-buffer row of each step's predecessor, for the three-step kernels
+        self._rows = np.empty(len(self._dn), dtype=np.int64)
+
         # flexible start: ring buffer of the reference frame where each cell's path began
-        self._S = np.empty(self._D.shape, dtype=np.int64) if flexible_start else None
+        self._S = np.empty(self._D.shape, dtype=np.int32) if flexible_start else None
 
         self.reset()
 
@@ -149,7 +157,24 @@ class SOA(OnlineAlignment):
             return self.position
 
         costs = self._costs(query_frame)
-        row = i % self._D.shape[0]
+        n_rows = self._D.shape[0]
+
+        # three steps (the default): unrolled kernels that overwrite the whole row
+        if len(self._dn) == 3:
+            for k in range(3):
+                prev_i = i - self._dn[k]
+                self._rows[k] = prev_i % n_rows if prev_i >= 0 else -1
+            if self._S is None:
+                best_j = soa_row_update3(
+                    i, costs, self._D, self._rows, self._dm, self._dw, self.normalize
+                )
+            else:
+                best_j = soa_row_update_flexible3(
+                    i, costs, self._D, self._S, self._rows, self._dm, self._dw
+                )
+            return self._append(i, best_j)
+
+        row = i % n_rows
         self._D[row].fill(np.inf)
         if self._S is None:
             best_j = soa_row_update(
@@ -161,8 +186,11 @@ class SOA(OnlineAlignment):
                 i, costs, self._D, self._S, self._dn, self._dm, self._dw
             )
 
+        return self._append(i, best_j)
+
+    def _append(self, i: int, best_j: int) -> int:
+        """Apply the monotonic constraint and record the estimate for frame ``i``."""
         if self.normalize and self.monotonic:
             best_j = max(best_j, self.position)
-
         self._path.append([i, int(best_j)])
         return int(best_j)

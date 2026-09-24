@@ -111,7 +111,8 @@ online_alignment/
 └── features/       # feature extractor base classes
 ```
 
-`scripts/time_alignment.py` times the algorithms on random sequences.
+`scripts/time_alignment.py` times the algorithms on random sequences, and
+`scripts/time_soa_update.py` times one SOA update against a long reference on a single core.
 
 ## Releasing
 
