@@ -16,8 +16,7 @@ produces exactly the same path as the offline one.
 
 ## Paper
 
-This package implements SOA from *A Simple Alternative to Online Time Warping* by
-Chengyi Tang, Sayema Lubis, Katie Baakkonen, Alan Lu and TJ Tsai (Harvey Mudd College).
+This package implements SOA from *A Simple Alternative to Online Time Warping*.
 The paper's experiments live in two companion repositories:
 
 - [SimRealtimeMazurkaBenchmark (`vienna4x22` branch)](https://github.com/HMC-MIR/SimRealtimeMazurkaBenchmark/tree/vienna4x22):
